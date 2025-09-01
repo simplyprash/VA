@@ -2,37 +2,19 @@ import React, { useEffect, useMemo, useState } from "react";
 import * as Astronomy from "astronomy-engine";
 
 /**
- * Vedic Zodiac Wheel — Interactive Planet Viewer
- * ------------------------------------------------
- * • Earth at center, 12 zodiac signs as background grid (tropical by default)
- * • Choose date/time; shows geocentric ecliptic longitudes for Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn
- * • Also computes mean lunar nodes: Rahu (ascending) & Ketu (descending = Rahu + 180°)
- * • Optional sidereal view via ayanāṁśa offset (you can pick Lahiri, etc., by entering the offset).
- *
- * Notes
- * - Longitudes are true ecliptic-of-date (ECT) from Astronomy Engine, then optionally shifted by ayanāṁśa.
- * - For Vedic/sidereal, toggle "Sidereal" and set ayanāṁśa (e.g., Lahiri ≈ 24.1° in 2025).  
- * - Rahu/Ketu use mean node formula (Meeus-style polynomial). Many jyotiṣa softwares offer both mean & true nodes.
+ * Vedic Zodiac Wheel — Interactive Planet Viewer (v2)
+ * ---------------------------------------------------
+ * Enhancements vs v1:
+ *  - Optional outer planets (Uranus/Neptune/Pluto)
+ *  - 27 Nakshatra grid with pada ticks (3°20′)
+ *  - Aspect lines (0, 60, 90, 120, 180) with adjustable orb
+ *  - Export PNG of the SVG wheel
+ *  - Node mode toggle (Mean nodes supported; True node placeholder)
  */
 
 // ---------- Helpers ----------
-const TAU = Math.PI * 2;
 const DEG2RAD = Math.PI / 180;
-const RAD2DEG = 180 / Math.PI;
-
-function norm360(d) {
-  let x = d % 360;
-  if (x < 0) x += 360;
-  return x;
-}
-
-function fmtDMS(deg) {
-  const d = Math.floor(deg);
-  const mFloat = (deg - d) * 60;
-  const m = Math.floor(mFloat);
-  const s = Math.round((mFloat - m) * 60);
-  return `${d}° ${m.toString().padStart(2, "0")}′ ${s.toString().padStart(2, "0")}″`;
-}
+function norm360(d) { let x = d % 360; if (x < 0) x += 360; return x; }
 
 const SIGNS = [
   { name: "Aries", short: "♈︎" },
@@ -55,29 +37,18 @@ function zodiacBreakdown(longitudeDeg) {
   const inSign = lon % 30;
   const d = Math.floor(inSign);
   const m = Math.floor((inSign - d) * 60);
-  return {
-    signIndex,
-    sign: SIGNS[signIndex].name,
-    signGlyph: SIGNS[signIndex].short,
-    deg: d,
-    min: m,
-    raw: lon
-  };
+  return { signIndex, sign: SIGNS[signIndex].name, signGlyph: SIGNS[signIndex].short, deg: d, min: m, raw: lon };
 }
 
-/** Mean lunar ascending node (Rahu) – degrees, true ecliptic of date (tropical). 
- *  Source: Meeus-style polynomial (approx). Accurate to a few arcminutes for most modern dates.
- */
+// Mean lunar ascending node (Rahu) – degrees, true ecliptic of date (tropical)
 function meanLunarNodeLongitude(date) {
-  // Julian centuries T from J2000
   const JD = (date.getTime() / 86400000) + 2440587.5; // Unix epoch to JD
-  const T = (JD - 2451545.0) / 36525.0;
-  // Mean longitude of the lunar ascending node Ω (deg) – IAU 1980/Meeus
+  const T = (JD - 2451545.0) / 36525.0; // Julian centuries from J2000
   const omega = 125.04455501 - 1934.13626197 * T + 0.0020762 * T * T + (T * T * T) / 467410 - (T * T * T * T) / 60616000;
   return norm360(omega);
 }
 
-// Astronomy Engine bodies we care about
+// Planets
 const BODIES = [
   { key: "Sun", body: Astronomy.Body.Sun, color: "#ffb703" },
   { key: "Moon", body: Astronomy.Body.Moon, color: "#8ecae6" },
@@ -85,48 +56,53 @@ const BODIES = [
   { key: "Venus", body: Astronomy.Body.Venus, color: "#ffafcc" },
   { key: "Mars", body: Astronomy.Body.Mars, color: "#e63946" },
   { key: "Jupiter", body: Astronomy.Body.Jupiter, color: "#ffd166" },
-  { key: "Saturn", body: Astronomy.Body.Saturn, color: "#cdb4db" }
+  { key: "Saturn", body: Astronomy.Body.Saturn, color: "#cdb4db" },
+  { key: "Uranus", body: Astronomy.Body.Uranus, color: "#94d2bd", optional: true },
+  { key: "Neptune", body: Astronomy.Body.Neptune, color: "#90caf9", optional: true },
+  { key: "Pluto", body: Astronomy.Body.Pluto, color: "#bfb8da", optional: true }
 ];
 
-function usePlanetLongitudes(date) {
+function usePlanetLongitudes(date, useMeanNode) {
   return useMemo(() => {
     const results = [];
     for (const item of BODIES) {
-      // Geocentric vector of body at given time (aberration true)
       const vec = Astronomy.GeoVector(item.body, date, true);
-      // Convert to true ecliptic-of-date spherical coords
-      const ecl = Astronomy.Ecliptic(vec);
-      results.push({ key: item.key, color: item.color, elon: norm360(ecl.elon) });
+      const ecl = Astronomy.Ecliptic(vec); // true ecliptic-of-date
+      results.push({ key: item.key, color: item.color, elon: norm360(ecl.elon), optional: !!item.optional });
     }
-    // Rahu/Ketu (mean nodes)
     const rahu = meanLunarNodeLongitude(date);
     const ketu = norm360(rahu + 180);
-    results.push({ key: "Rahu (Mean)", color: "#2a9d8f", elon: rahu });
-    results.push({ key: "Ketu (Mean)", color: "#264653", elon: ketu });
+    results.push({ key: useMeanNode ? "Rahu (Mean)" : "Rahu (True – TBD)", color: "#2a9d8f", elon: rahu, isNode: true });
+    results.push({ key: useMeanNode ? "Ketu (Mean)" : "Ketu (True – TBD)", color: "#264653", elon: ketu, isNode: true });
     return results;
-  }, [date]);
+  }, [date, useMeanNode]);
 }
 
-function Wheel({ date, ayanamshaDeg, useSidereal }) {
-  const planets = usePlanetLongitudes(date);
-
-  const points = planets.map(p => {
-    const lon = useSidereal ? norm360(p.elon - ayanamshaDeg) : p.elon;
-    return { ...p, lon };
-  });
+function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatraGrid, showAspects, aspectOrb, enabledAspects, useMeanNode }) {
+  const planets = usePlanetLongitudes(date, useMeanNode);
+  const filtered = planets.filter(p => showOuterPlanets || !p.optional);
+  const points = filtered.map(p => ({ ...p, lon: useSidereal ? norm360(p.elon - ayanamshaDeg) : p.elon }));
 
   // SVG geometry
-  const size = 640;
-  const cx = size / 2;
-  const cy = size / 2;
-  const outer = 300;
-  const inner = 230; // where planet markers sit
+  const size = 740;
+  const cx = size / 2, cy = size / 2;
+  const outer = 320;   // outer radius
+  const inner = 250;   // planet ring
 
-  function angleToXY(angleDeg, r) {
-    const a = (90 - angleDeg) * DEG2RAD; // 0° at Aries (to the right), rotate so 0° Aries is at 3 o'clock -> here we use 0° at 0° Aries pointing right, but SVG 0° is to the right; use 90-offset to put 0° at top if desired.
-    // For wheel styling, put 0° Aries at the right (3 o'clock). If you prefer 0° at top, change to a = (-angleDeg) * DEG2RAD;
-    return { x: cx + r * Math.cos(a), y: cy - r * Math.sin(a) };
-  }
+  const angleToXY = (angleDeg, r) => {
+    // 0° Aries at right (3 o'clock)
+    const a = (0 - angleDeg) * DEG2RAD; // rotate so 0° at +x axis
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  };
+
+  // Aspect helper
+  const hasAspect = (a, b) => {
+    const ang = Math.min(norm360(a - b), norm360(b - a));
+    return Object.keys(enabledAspects)
+      .filter(k => enabledAspects[k])
+      .map(k => parseFloat(k))
+      .some(target => Math.abs(ang - target) <= aspectOrb);
+  };
 
   return (
     <div className="flex flex-col lg:flex-row gap-6">
@@ -137,23 +113,36 @@ function Wheel({ date, ayanamshaDeg, useSidereal }) {
         {/* 12 sign wedges grid */}
         {Array.from({ length: 12 }).map((_, i) => {
           const angle = i * 30;
-          const { x, y } = angleToXY(angle, outer);
+          const p = angleToXY(angle, outer);
+          const mid = angle + 15;
+          const m = angleToXY(mid, outer - 24);
           return (
             <g key={`grid-${i}`}>
-              <line x1={cx} y1={cy} x2={x} y2={y} stroke="#94a3b8" strokeWidth={1} />
-              {/* Sign labels at mid-arc */}
-              {(() => {
-                const mid = angle + 15;
-                const p = angleToXY(mid, outer - 24);
-                return (
-                  <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="middle" className="fill-slate-700" style={{ fontSize: 16, fontWeight: 700 }}>
-                    {SIGNS[i].short}
-                  </text>
-                );
-              })()}
+              <line x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="#94a3b8" strokeWidth={1} />
+              <text x={m.x} y={m.y} textAnchor="middle" dominantBaseline="middle" className="fill-slate-700" style={{ fontSize: 16, fontWeight: 700 }}>
+                {SIGNS[i].short}
+              </text>
             </g>
           );
         })}
+
+        {/* Nakshatra grid (27) + padas (optional) */}
+        {showNakshatraGrid && (
+          <g>
+            {Array.from({ length: 27 }).map((_, i) => {
+              const angle = i * (360/27);
+              const p1 = angleToXY(angle, outer);
+              const p2 = angleToXY(angle, outer - 22);
+              return <line key={`nak-${i}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#f59e0b" strokeWidth={1} opacity={0.8} />;
+            })}
+            {Array.from({ length: 108 }).map((_, i) => {
+              const angle = i * (360/108);
+              const p1 = angleToXY(angle, outer);
+              const p2 = angleToXY(angle, outer - 12);
+              return <line key={`pada-${i}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#fbbf24" strokeWidth={0.8} opacity={0.7} />;
+            })}
+          </g>
+        )}
 
         {/* 5° minor ticks */}
         {Array.from({ length: 72 }).map((_, i) => {
@@ -166,19 +155,25 @@ function Wheel({ date, ayanamshaDeg, useSidereal }) {
         {/* Inner ring for planets */}
         <circle cx={cx} cy={cy} r={inner} fill="none" stroke="#e2e8f0" strokeWidth={1} />
 
+        {/* Aspect lines */}
+        {showAspects && points.map((a,i) => (
+          points.slice(i+1).map((b,j) => {
+            if (!hasAspect(a.lon, b.lon)) return null;
+            const pa = angleToXY(a.lon, inner);
+            const pb = angleToXY(b.lon, inner);
+            return <line key={`asp-${i}-${j}`} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} stroke="#64748b" strokeWidth={1} opacity={0.6} />
+          })
+        ))}
+
         {/* Planet markers */}
-        {points.map((p, idx) => {
+        {points.map((p) => {
           const pos = angleToXY(p.lon, inner);
           const label = zodiacBreakdown(p.lon);
           return (
-            <g key={`p-${p.key}`}> 
+            <g key={`p-${p.key}`}>
               <circle cx={pos.x} cy={pos.y} r={7} fill={p.color} stroke="#0f172a" strokeWidth={1} />
-              {/* leader line */}
               <line x1={pos.x} y1={pos.y} x2={pos.x} y2={pos.y - 22} stroke={p.color} strokeWidth={1} />
-              {/* text label slightly above */}
-              <text x={pos.x} y={pos.y - 28} textAnchor="middle" className="fill-slate-800" style={{ fontSize: 12, fontWeight: 700 }}>
-                {p.key}
-              </text>
+              <text x={pos.x} y={pos.y - 28} textAnchor="middle" className="fill-slate-800" style={{ fontSize: 12, fontWeight: 700 }}>{p.key}</text>
               <text x={pos.x} y={pos.y - 14} textAnchor="middle" className="fill-slate-600" style={{ fontSize: 11 }}>
                 {label.signGlyph} {label.deg}°{label.min.toString().padStart(2, "0")}′
               </text>
@@ -190,10 +185,38 @@ function Wheel({ date, ayanamshaDeg, useSidereal }) {
         <circle cx={cx} cy={cy} r={4} fill="#0f172a" />
       </svg>
 
-      {/* Listing */}
-      <div className="min-w-[320px] max-w-[420px]">
-        <h2 className="text-xl font-bold text-slate-800 mb-2">Placements</h2>
+      {/* Listing + controls */}
+      <div className="min-w-[360px] max-w-[500px]">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-xl font-bold text-slate-800">Placements</h2>
+          <button
+            onClick={() => {
+              const svg = document.querySelector('svg');
+              const xml = new XMLSerializer().serializeToString(svg);
+              const svg64 = btoa(unescape(encodeURIComponent(xml)));
+              const image64 = 'data:image/svg+xml;base64,' + svg64;
+              const img = new Image();
+              img.onload = function() {
+                const canvas = document.createElement('canvas');
+                canvas.width = svg.viewBox.baseVal.width || svg.width.baseVal.value;
+                canvas.height = svg.viewBox.baseVal.height || svg.height.baseVal.value;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0,0,canvas.width,canvas.height);
+                ctx.drawImage(img,0,0);
+                const link = document.createElement('a');
+                link.download = 'vedic-wheel.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+              };
+              img.src = image64;
+            }}
+            className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100">
+            Export PNG
+          </button>
+        </div>
         <p className="text-sm text-slate-600 mb-3">{new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "medium" }).format(date)}</p>
+
         <table className="w-full text-sm border-separate border-spacing-y-1">
           <thead>
             <tr className="text-left text-slate-500">
@@ -216,9 +239,32 @@ function Wheel({ date, ayanamshaDeg, useSidereal }) {
           </tbody>
         </table>
 
-        <div className="mt-4 text-xs text-slate-500 leading-relaxed">
-          <p>Mode: <span className="font-semibold">{useSidereal ? "Sidereal (ayanāṁśa applied)" : "Tropical (no ayanāṁśa)"}</span></p>
-          <p>Engine: Astronomy Engine (geocentric true ecliptic-of-date). Rahu/Ketu = mean nodes.</p>
+        <div className="mt-4 text-xs text-slate-500 leading-relaxed space-y-2">
+          <p>Mode: <span className="font-semibold">{useSidereal ? "Sidereal (ayanāṁśa applied)" : "Tropical (no ayanāṁśa)"}</span> • Nodes: <span className="font-semibold">{useMeanNode?"Mean":"True (TBD)"}</span></p>
+          <p>Engine: Astronomy Engine (geocentric true ecliptic-of-date). Rahu/Ketu currently use mean node formula; true node to be added.</p>
+
+          {/* Feature toggles */}
+          <div className="pt-2 border-t">
+            <div className="flex flex-wrap gap-3 items-center text-sm">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={showOuterPlanets} onChange={(e)=>window.setShowOuter(e.target.checked)} /> Show Uranus/Neptune/Pluto</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={showNakshatraGrid} onChange={(e)=>window.setShowNak(e.target.checked)} /> Nakshatra grid</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={showAspects} onChange={(e)=>window.setShowAsp(e.target.checked)} /> Aspects</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={useMeanNode} onChange={(e)=>window.setNodeMode(e.target.checked)} /> Mean node (true TBD)</label>
+              {showAspects && (
+                <>
+                  <span className="text-slate-500">Aspects:</span>
+                  {[0,60,90,120,180].map(a => (
+                    <label key={`asp-${a}`} className="flex items-center gap-1">
+                      <input type="checkbox" checked={!!enabledAspects[a]} onChange={() => window.toggleAspect(a)} />{a}°
+                    </label>
+                  ))}
+                  <label className="flex items-center gap-2">
+                    Orb <input type="number" min={0} max={10} step={0.5} value={aspectOrb} onChange={(e)=>window.setOrb(parseFloat(e.target.value||"0"))} className="border rounded px-2 py-1 w-20" />°
+                  </label>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -227,18 +273,34 @@ function Wheel({ date, ayanamshaDeg, useSidereal }) {
 
 export default function VedicZodiacWheel() {
   const [whenIso, setWhenIso] = useState(() => {
-    // Default to now in local time, formatted for datetime-local input.
     const now = new Date();
     const pad = (n) => n.toString().padStart(2, "0");
-    const iso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    return iso;
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
   });
   const [useSidereal, setUseSidereal] = useState(true);
-  const [ayanamsha, setAyanamsha] = useState(24.1); // degrees; adjust as you prefer (e.g., Lahiri ~24.1° in 2025)
+  const [ayanamsha, setAyanamsha] = useState(24.1);
+  const [showOuterPlanets, setShowOuterPlanets] = useState(true);
+  const [showNakshatraGrid, setShowNakshatraGrid] = useState(true);
+  const [useMeanNode, setUseMeanNode] = useState(true);
+  const [showAspects, setShowAspects] = useState(true);
+  const [aspectOrb, setAspectOrb] = useState(6);
+  const [enabledAspects, setEnabledAspects] = useState({ 0: true, 60: false, 90: true, 120: true, 180: true });
 
   const date = useMemo(() => new Date(whenIso), [whenIso]);
 
-  // Quick presets for popular ayanāṁśas (approx for mid-2025)
+  // expose small setters so the inline table controls work without prop-drilling deeply
+  useEffect(() => {
+    window.setShowOuter = setShowOuterPlanets;
+    window.setShowNak = setShowNakshatraGrid;
+    window.setShowAsp = setShowAspects;
+    window.setNodeMode = setUseMeanNode;
+    window.setOrb = setAspectOrb;
+    window.toggleAspect = (a) => setEnabledAspects(prev => ({ ...prev, [a]: !prev[a] }));
+    return () => {
+      delete window.setShowOuter; delete window.setShowNak; delete window.setShowAsp; delete window.setNodeMode; delete window.setOrb; delete window.toggleAspect;
+    };
+  }, []);
+
   const AY_PRESETS = [
     { name: "Lahiri (Chitra)", val: 24.10 },
     { name: "Raman", val: 22.50 },
@@ -249,7 +311,7 @@ export default function VedicZodiacWheel() {
   return (
     <div className="p-4 lg:p-6 font-sans text-slate-800">
       <h1 className="text-2xl font-extrabold mb-2">Vedic Zodiac Wheel — Earth‑Centered</h1>
-      <p className="text-slate-600 mb-4">Pick a date/time. Toggle sidereal and set your ayanāṁśa. The wheel shows planetary longitudes against the 12 sign grid.</p>
+      <p className="text-slate-600 mb-4">Pick a date/time. Toggle sidereal and set your ayanāṁśa. Extras: outer planets, 27 nakshatra grid, aspects, PNG export.</p>
 
       <div className="flex flex-wrap items-end gap-4 mb-4">
         <label className="text-sm">
@@ -276,12 +338,41 @@ export default function VedicZodiacWheel() {
         </div>
       </div>
 
-      <Wheel date={date} ayanamshaDeg={ayanamsha} useSidereal={useSidereal} />
+      <div className="flex flex-wrap gap-4 mb-4 text-sm">
+        <label className="flex items-center gap-2"><input type="checkbox" checked={showOuterPlanets} onChange={(e)=>setShowOuterPlanets(e.target.checked)} /> Show Uranus/Neptune/Pluto</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={showNakshatraGrid} onChange={(e)=>setShowNakshatraGrid(e.target.checked)} /> Show Nakshatra grid</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={showAspects} onChange={(e)=>setShowAspects(e.target.checked)} /> Show aspects</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={useMeanNode} onChange={(e)=>setUseMeanNode(e.target.checked)} /> Mean node Rahu/Ketu (True node coming soon)</label>
+        {showAspects && (
+          <>
+            <span className="text-slate-500">Aspects:</span>
+            {[0,60,90,120,180].map(a => (
+              <label key={`asp-${a}`} className="flex items-center gap-1">
+                <input type="checkbox" checked={!!enabledAspects[a]} onChange={() => setEnabledAspects(prev=>({...prev, [a]: !prev[a]}))} />{a}°
+              </label>
+            ))}
+            <label className="flex items-center gap-2">
+              Orb
+              <input type="number" min={0} max={10} step={0.5} value={aspectOrb} onChange={(e)=>setAspectOrb(parseFloat(e.target.value||"0"))} className="border rounded px-2 py-1 w-20" />°
+            </label>
+          </>
+        )}
+      </div>
+
+      <Wheel 
+        date={date}
+        ayanamshaDeg={ayanamsha}
+        useSidereal={useSidereal}
+        showOuterPlanets={showOuterPlanets}
+        showNakshatraGrid={showNakshatraGrid}
+        showAspects={showAspects}
+        aspectOrb={aspectOrb}
+        enabledAspects={enabledAspects}
+        useMeanNode={useMeanNode}
+      />
 
       <div className="mt-6 text-xs text-slate-500">
-        <p>
-          Tip: Set ayanāṁśa to <span className="font-semibold">0°</span> to view tropical placements. For Vedic use, keep Sidereal on and pick your preferred ayanāṁśa value.
-        </p>
+        <p>Tip: Set ayanāṁśa to <span className="font-semibold">0°</span> to view tropical placements. For Vedic use, keep Sidereal on and pick your preferred ayanāṁśa value.</p>
       </div>
     </div>
   );
