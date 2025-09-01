@@ -1,35 +1,66 @@
 import React, { useEffect, useMemo, useState } from "react";
 import * as Astronomy from "astronomy-engine";
 
-/**
- * Vedic Zodiac Wheel — Interactive Planet Viewer (v2)
- * ------------------------------------------------------
- * Enhancements vs v1:
- *  - Optional outer planets (Uranus/Neptune/Pluto)
- *  - 27 Nakshatra grid with pada ticks (3°20′)
- *  - Aspect lines (0, 60, 90, 120, 180) with adjustable orb
- *  - Export PNG of the SVG wheel
- *  - Node mode toggle (Mean nodes supported; True node placeholder)
- */
-
 // ---------- Helpers ----------
 const DEG2RAD = Math.PI / 180;
 function norm360(d) { let x = d % 360; if (x < 0) x += 360; return x; }
 
+// Zodiac labels in Devanagari (safe \uXXXX escapes)
 const SIGNS = [
-  { name: "Aries", short: "♈︎" },
-  { name: "Taurus", short: "♉︎" },
-  { name: "Gemini", short: "♊︎" },
-  { name: "Cancer", short: "♋︎" },
-  { name: "Leo", short: "♌︎" },
-  { name: "Virgo", short: "♍︎" },
-  { name: "Libra", short: "♎︎" },
-  { name: "Scorpio", short: "♏︎" },
-  { name: "Sagittarius", short: "♐︎" },
-  { name: "Capricorn", short: "♑︎" },
-  { name: "Aquarius", short: "♒︎" },
-  { name: "Pisces", short: "♓︎" }
+  { name: "Aries",       short: "\u092e\u0947\u0937" },       // मेष
+  { name: "Taurus",      short: "\u0935\u0943\u0937\u092d" }, // वृषभ
+  { name: "Gemini",      short: "\u092e\u093f\u0925\u0941\u0928" }, // मिथुन
+  { name: "Cancer",      short: "\u0915\u0930\u094d\u0915" }, // कर्क
+  { name: "Leo",         short: "\u0938\u093f\u0902\u0939" }, // सिंह
+  { name: "Virgo",       short: "\u0915\u0928\u094d\u092f\u093e" }, // कन्या
+  { name: "Libra",       short: "\u0924\u0941\u0932\u093e" }, // तुला
+  { name: "Scorpio",     short: "\u0935\u0943\u0936\u094d\u091a\u093f\u0915" }, // वृश्चिक
+  { name: "Sagittarius", short: "\u0927\u0928\u0941" },       // धनु
+  { name: "Capricorn",   short: "\u092e\u0915\u0930" },       // मकर
+  { name: "Aquarius",    short: "\u0915\u0941\u0902\u092d" }, // कुंभ
+  { name: "Pisces",      short: "\u092e\u0940\u0928" }        // मीन
 ];
+
+// 27 Nakshatras (English + Devanagari in safe escapes)
+const NAKSHATRAS = [
+  { en: "Ashwini",           dev: "\u0905\u0936\u094d\u0935\u093f\u0928\u0940" },
+  { en: "Bharani",           dev: "\u092d\u0930\u0923\u0940" },
+  { en: "Krittika",          dev: "\u0915\u0943\u0924\u094d\u0924\u093f\u0915\u093e" },
+  { en: "Rohini",            dev: "\u0930\u094b\u0939\u093f\u0923\u0940" },
+  { en: "Mrigashira",        dev: "\u092e\u0943\u0917\u0936\u0940\u0930\u094d\u0937\u093e" },
+  { en: "Ardra",             dev: "\u0906\u0930\u094d\u0926\u094d\u0930\u093e" },
+  { en: "Punarvasu",         dev: "\u092a\u0941\u0928\u0930\u094d\u0935\u0938\u0941" },
+  { en: "Pushya",            dev: "\u092a\u0941\u0937\u094d\u092f" },
+  { en: "Ashlesha",          dev: "\u0906\u0936\u094d\u0932\u0947\u0937\u093e" },
+  { en: "Magha",             dev: "\u092e\u0918\u093e" },
+  { en: "Purva Phalguni",    dev: "\u092a\u0942\u0930\u094d\u0935\u092b\u0932\u094d\u0917\u0941\u0928\u0940" },
+  { en: "Uttara Phalguni",   dev: "\u0909\u0924\u094d\u0924\u0930\u092b\u0932\u094d\u0917\u0941\u0928\u0940" },
+  { en: "Hasta",             dev: "\u0939\u0938\u094d\u0924" },
+  { en: "Chitra",            dev: "\u091a\u093f\u0924\u094d\u0930\u093e" },
+  { en: "Swati",             dev: "\u0938\u094d\u0935\u093e\u0924\u0940" },
+  { en: "Vishakha",          dev: "\u0935\u093f\u0936\u093e\u0916\u093e" },
+  { en: "Anuradha",          dev: "\u0905\u0928\u0941\u0930\u093e\u0927\u093e" },
+  { en: "Jyeshtha",          dev: "\u091c\u094d\u092f\u0947\u0937\u094d\u0920\u093e" },
+  { en: "Mula",              dev: "\u092e\u0942\u0932\u093e" },
+  { en: "Purva Ashadha",     dev: "\u092a\u0942\u0930\u094d\u0935\u093e\u0937\u093e\u0922\u093c\u093e" },
+  { en: "Uttara Ashadha",    dev: "\u0909\u0924\u094d\u0924\u0930\u093e\u0937\u093e\u0922\u093c\u093e" },
+  { en: "Shravana",          dev: "\u0936\u094d\u0930\u0935\u0923" },
+  { en: "Dhanishta",         dev: "\u0927\u0928\u093f\u0937\u094d\u091f\u093e" },
+  { en: "Shatabhisha",       dev: "\u0936\u0924\u092d\u093f\u0937\u093e" },
+  { en: "Purva Bhadrapada",  dev: "\u092a\u0942\u0930\u094d\u0935\u092d\u093e\u0926\u094d\u0930\u092a\u0926\u093e" },
+  { en: "Uttara Bhadrapada", dev: "\u0909\u0924\u094d\u0924\u0930\u092d\u093e\u0926\u094d\u0930\u092a\u0926\u093e" },
+  { en: "Revati",            dev: "\u0930\u0947\u0935\u0924\u0940" }
+];
+const NAK_SIZE = 360/27;       // 13°20′ per nakshatra
+const PADA_SIZE = NAK_SIZE/4;  // 3°20′ per pada
+function nakshatraOf(siderealLon) {
+  const lon = norm360(siderealLon);
+  const idx = Math.floor(lon / NAK_SIZE);
+  const within = lon - idx * NAK_SIZE;
+  const pada = Math.floor(within / PADA_SIZE) + 1; // 1..4
+  const item = NAKSHATRAS[idx];
+  return { index: idx, name: item.en, dev: item.dev, pada };
+}
 
 function zodiacBreakdown(longitudeDeg) {
   const lon = norm360(longitudeDeg);
@@ -40,10 +71,10 @@ function zodiacBreakdown(longitudeDeg) {
   return { signIndex, sign: SIGNS[signIndex].name, signGlyph: SIGNS[signIndex].short, deg: d, min: m, raw: lon };
 }
 
-// Mean lunar ascending node (Rahu) – degrees, true ecliptic of date (tropical)
+// Mean lunar node (Meeus) — tropical
 function meanLunarNodeLongitude(date) {
-  const JD = (date.getTime() / 86400000) + 2440587.5; // Unix epoch to JD
-  const T = (JD - 2451545.0) / 36525.0; // Julian centuries from J2000
+  const JD = (date.getTime() / 86400000) + 2440587.5;
+  const T = (JD - 2451545.0) / 36525.0;
   const omega = 125.04455501 - 1934.13626197 * T + 0.0020762 * T * T + (T * T * T) / 467410 - (T * T * T * T) / 60616000;
   return norm360(omega);
 }
@@ -91,11 +122,10 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
 
   const angleToXY = (angleDeg, r) => {
     // 0° Aries at right (3 o'clock)
-    const a = (0 - angleDeg) * DEG2RAD; // rotate so 0° at +x axis
+    const a = (0 - angleDeg) * DEG2RAD;
     return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
   };
 
-  // Aspect helper
   const hasAspect = (a, b) => {
     const ang = Math.min(norm360(a - b), norm360(b - a));
     return Object.keys(enabledAspects)
@@ -175,7 +205,7 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
               <line x1={pos.x} y1={pos.y} x2={pos.x} y2={pos.y - 22} stroke={p.color} strokeWidth={1} />
               <text x={pos.x} y={pos.y - 28} textAnchor="middle" className="fill-slate-800" style={{ fontSize: 12, fontWeight: 700 }}>{p.key}</text>
               <text x={pos.x} y={pos.y - 14} textAnchor="middle" className="fill-slate-600" style={{ fontSize: 11 }}>
-                {label.signGlyph} {label.deg}°{label.min.toString().padStart(2, "0")}′
+                {label.signGlyph} {label.sign} {label.deg}°{label.min.toString().padStart(2, "0")}′
               </text>
             </g>
           );
@@ -186,7 +216,7 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
       </svg>
 
       {/* Listing + controls */}
-      <div className="min-w-[360px] max-w-[500px]">
+      <div className="min-w-[360px] max-w-[520px]">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-xl font-bold text-slate-800">Placements</h2>
           <button
@@ -221,17 +251,21 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
           <thead>
             <tr className="text-left text-slate-500">
               <th className="pb-1">Body</th>
-              <th className="pb-1">Zodiac</th>
+              <th className="pb-1">Rasi (\u0930\u093e\u0936\u093f)</th>
+              <th className="pb-1">Nakshatra</th>
               <th className="pb-1">Longitude</th>
             </tr>
           </thead>
           <tbody>
             {points.map((p) => {
               const z = zodiacBreakdown(p.lon);
+              const sidLon = norm360(p.elon - ayanamshaDeg); // sidereal lon for nakshatra
+              const nk = nakshatraOf(sidLon);
               return (
                 <tr key={`row-${p.key}`} className="bg-slate-50">
                   <td className="px-2 py-1 font-semibold" style={{ color: p.color }}>{p.key}</td>
                   <td className="px-2 py-1">{z.signGlyph} {z.sign} {z.deg}°{z.min.toString().padStart(2, "0")}′</td>
+                  <td className="px-2 py-1">{nk.dev} (pada {nk.pada})</td>
                   <td className="px-2 py-1">{z.raw.toFixed(3)}°</td>
                 </tr>
               );
@@ -241,9 +275,6 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
 
         <div className="mt-4 text-xs text-slate-500 leading-relaxed space-y-2">
           <p>Mode: <span className="font-semibold">{useSidereal ? "Sidereal (ayanāṁśa applied)" : "Tropical (no ayanāṁśa)"}</span> • Nodes: <span className="font-semibold">{useMeanNode?"Mean":"True (TBD)"}</span></p>
-          <p>Engine: Astronomy Engine (geocentric true ecliptic-of-date). Rahu/Ketu currently use mean node formula; true node to be added.</p>
-
-          {/* Feature toggles */}
           <div className="pt-2 border-t">
             <div className="flex flex-wrap gap-3 items-center text-sm">
               <label className="flex items-center gap-2"><input type="checkbox" checked={showOuterPlanets} onChange={(e)=>window.setShowOuter(e.target.checked)} /> Show Uranus/Neptune/Pluto</label>
@@ -288,7 +319,7 @@ export default function VedicZodiacWheel() {
 
   const date = useMemo(() => new Date(whenIso), [whenIso]);
 
-  // expose small setters so the inline table controls work without prop-drilling deeply
+  // expose setters for inline controls
   useEffect(() => {
     window.setShowOuter = setShowOuterPlanets;
     window.setShowNak = setShowNakshatraGrid;
@@ -310,8 +341,8 @@ export default function VedicZodiacWheel() {
 
   return (
     <div className="p-4 lg:p-6 font-sans text-slate-800">
-      <h1 className="text-2xl font-extrabold mb-2">Vedic Zodiac Wheel — Earth‑Centered</h1>
-      <p className="text-slate-600 mb-4">Pick a date/time. Toggle sidereal and set your ayanāṁśa. Extras: outer planets, 27 nakshatra grid, aspects, PNG export.</p>
+      <h1 className="text-2xl font-extrabold mb-2">Vedic Zodiac Wheel — Earth‑Centered (v2.1)</h1>
+      <p className="text-slate-600 mb-4">Sidereal option, outer planets, 27 nakshatra grid, aspects, PNG export, and a Nakshatra column in the table with Hindi labels for rāśi.</p>
 
       <div className="flex flex-wrap items-end gap-4 mb-4">
         <label className="text-sm">
