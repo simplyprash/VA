@@ -3,7 +3,7 @@ import * as Astronomy from "astronomy-engine";
 
 /**
  * Vedic Zodiac Wheel — Interactive Planet Viewer (v2)
- * ---------------------------------------------------
+ * ------------------------------------------------------
  * Enhancements vs v1:
  *  - Optional outer planets (Uranus/Neptune/Pluto)
  *  - 27 Nakshatra grid with pada ticks (3°20′)
