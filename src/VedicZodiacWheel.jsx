@@ -137,6 +137,20 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
   return (
     <div className="flex flex-col lg:flex-row gap-6">
       <svg width={size} height={size} className="rounded-2xl shadow border bg-white">
+        <defs>
+          <radialGradient id="wheelBg" cx="50%" cy="50%" r="65%">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="100%" stopColor="#f1f5f9" />
+          </radialGradient>
+          <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="2.5" result="blur"/>
+            <feMerge>
+              <feMergeNode in="blur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+        <rect x="0" y="0" width={size} height={size} fill="url(#wheelBg)"/>
         {/* Outer ring */}
         <circle cx={cx} cy={cy} r={outer} fill="#fff" stroke="#0f172a" strokeWidth={2} />
 
@@ -145,7 +159,7 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
           const angle = i * 30;
           const p = angleToXY(angle, outer);
           const mid = angle + 15;
-          const m = angleToXY(mid, outer - 24);
+          const m = angleToXY(mid, outer + 34);
           return (
             <g key={`grid-${i}`}>
               <line x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="#94a3b8" strokeWidth={1} />
@@ -201,12 +215,10 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
           const label = zodiacBreakdown(p.lon);
           return (
             <g key={`p-${p.key}`}>
-              <circle cx={pos.x} cy={pos.y} r={7} fill={p.color} stroke="#0f172a" strokeWidth={1} />
+              <circle cx={pos.x} cy={pos.y} r={7} fill={p.color} stroke="#0f172a" strokeWidth={1} filter="url(#softGlow)" />
               <line x1={pos.x} y1={pos.y} x2={pos.x} y2={pos.y - 22} stroke={p.color} strokeWidth={1} />
               <text x={pos.x} y={pos.y - 28} textAnchor="middle" className="fill-slate-800" style={{ fontSize: 12, fontWeight: 700 }}>{p.key}</text>
-              <text x={pos.x} y={pos.y - 14} textAnchor="middle" className="fill-slate-600" style={{ fontSize: 11 }}>
-                {label.signGlyph} {label.sign} {label.deg}°{label.min.toString().padStart(2, "0")}′
-              </text>
+              <text x={pos.x} y={pos.y - 14} textAnchor="middle" className="fill-slate-600" style={{ fontSize: 11 }}>{`${label.deg}°${label.min.toString().padStart(2, "0")}′`}</text>
             </g>
           );
         })}
@@ -317,7 +329,29 @@ export default function VedicZodiacWheel() {
   const [aspectOrb, setAspectOrb] = useState(6);
   const [enabledAspects, setEnabledAspects] = useState({ 0: true, 60: false, 90: true, 120: true, 180: true });
 
-  const date = useMemo(() => new Date(whenIso), [whenIso]);
+  const baseDate = useMemo(() => new Date(whenIso), [whenIso]);
+
+  const [offsetHours, setOffsetHours] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [stepHours, setStepHours] = useState(6);
+  const [rangeDays, setRangeDays] = useState(90);
+  const [tickMs, setTickMs] = useState(200);
+
+  const date = useMemo(() => new Date(baseDate.getTime() + offsetHours * 3600000), [baseDate, offsetHours]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const id = setInterval(() => {
+      setOffsetHours(h => {
+        const limit = rangeDays * 24;
+        const next = h + stepHours;
+        if (next > limit) return -limit;
+        if (next < -limit) return limit;
+        return next;
+      });
+    }, tickMs);
+    return () => clearInterval(id);
+  }, [isPlaying, stepHours, tickMs, rangeDays]);
 
   // expose setters for inline controls
   useEffect(() => {
@@ -367,6 +401,31 @@ export default function VedicZodiacWheel() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="mb-4 p-3 bg-slate-50 rounded-xl border">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => setOffsetHours(h => h - stepHours)} className="px-2 py-1 text-sm border rounded hover:bg-slate-100">◀︎</button>
+          <button onClick={() => setIsPlaying(p => !p)} className="px-2 py-1 text-sm border rounded hover:bg-slate-100">{isPlaying ? "Pause" : "Play"}</button>
+          <button onClick={() => setOffsetHours(h => h + stepHours)} className="px-2 py-1 text-sm border rounded hover:bg-slate-100">▶︎</button>
+          <button onClick={() => setOffsetHours(0)} className="px-2 py-1 text-sm border rounded hover:bg-slate-100">Reset</button>
+          <span className="mx-2 text-slate-600 text-sm">Step</span>
+          <select value={stepHours} onChange={(e)=>setStepHours(parseInt(e.target.value))} className="border rounded px-2 py-1 text-sm">
+            {[1,3,6,12,24].map(h => <option key={h} value={h}>{h}h</option>)}
+          </select>
+          <span className="mx-2 text-slate-600 text-sm">Range</span>
+          <select value={rangeDays} onChange={(e)=>setRangeDays(parseInt(e.target.value))} className="border rounded px-2 py-1 text-sm">
+            {[30,90,180,365].map(d => <option key={d} value={d}>{d}d</option>)}
+          </select>
+          <span className="mx-2 text-slate-600 text-sm">Speed</span>
+          <select value={tickMs} onChange={(e)=>setTickMs(parseInt(e.target.value))} className="border rounded px-2 py-1 text-sm">
+            <option value={50}>fast</option>
+            <option value={200}>normal</option>
+            <option value={500}>slow</option>
+          </select>
+        </div>
+        <input type="range" min={-rangeDays*24} max={rangeDays*24} step={1} value={offsetHours} onChange={(e)=>setOffsetHours(parseInt(e.target.value))} className="w-full mt-3" />
+        <div className="text-xs text-slate-600 mt-1">Base: {new Intl.DateTimeFormat(undefined,{ dateStyle: "medium", timeStyle: "short"}).format(baseDate)} • Offset: {offsetHours}h • Showing: {new Intl.DateTimeFormat(undefined,{ dateStyle: "medium", timeStyle: "short"}).format(date)}</div>
       </div>
 
       <div className="flex flex-wrap gap-4 mb-4 text-sm">
