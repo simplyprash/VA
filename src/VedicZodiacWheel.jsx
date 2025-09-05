@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import * as Astronomy from "astronomy-engine";
 
-/* ========================= Helpers & Constants ========================= */
+/* ========================= Helpers & Constants (plain JS) ========================= */
 
 const DEG2RAD = Math.PI / 180;
-function norm360(d: number) { let x = d % 360; if (x < 0) x += 360; return x; }
+function norm360(d) { let x = d % 360; if (x < 0) x += 360; return x; }
 
-// Zodiac labels in Devanagari (safe \uXXXX escapes)
+// Zodiac labels (Devanagari via \uXXXX to avoid encoding surprises)
 const SIGNS = [
   { name: "Aries",       short: "\u092e\u0947\u0937" },       // मेष
   { name: "Taurus",      short: "\u0935\u0943\u0937\u092d" }, // वृषभ
@@ -22,7 +22,7 @@ const SIGNS = [
   { name: "Pisces",      short: "\u092e\u0940\u0928" }        // मीन
 ];
 
-// 27 Nakshatras (English + Devanagari in safe escapes)
+// 27 Nakshatras (English + Devanagari via safe escapes)
 const NAKSHATRAS = [
   { en: "Ashwini",           dev: "\u0905\u0936\u094d\u0935\u093f\u0928\u0940" },
   { en: "Bharani",           dev: "\u092d\u0930\u0923\u0940" },
@@ -53,10 +53,10 @@ const NAKSHATRAS = [
   { en: "Revati",            dev: "\u0930\u0947\u0935\u0924\u0940" }
 ];
 
-const NAK_SIZE = 360 / 27;       // 13°20′ per nakshatra
-const PADA_SIZE = NAK_SIZE / 4;  // 3°20′ per pada
+const NAK_SIZE = 360 / 27;      // 13°20′
+const PADA_SIZE = NAK_SIZE / 4; // 3°20′
 
-function nakshatraOf(siderealLon: number) {
+function nakshatraOf(siderealLon) {
   const lon = norm360(siderealLon);
   const idx = Math.floor(lon / NAK_SIZE);
   const within = lon - idx * NAK_SIZE;
@@ -65,7 +65,7 @@ function nakshatraOf(siderealLon: number) {
   return { index: idx, name: item.en, dev: item.dev, pada };
 }
 
-function zodiacBreakdown(longitudeDeg: number) {
+function zodiacBreakdown(longitudeDeg) {
   const lon = norm360(longitudeDeg);
   const signIndex = Math.floor(lon / 30);
   const inSign = lon % 30;
@@ -75,8 +75,8 @@ function zodiacBreakdown(longitudeDeg: number) {
 }
 
 // Mean lunar node (Meeus) — tropical
-function meanLunarNodeLongitude(date: Date) {
-  const JD = (date.getTime() / 86400000) + 2440587.5;
+function meanLunarNodeLongitude(date) {
+  const JD = date.getTime() / 86400000 + 2440587.5;
   const T = (JD - 2451545.0) / 36525.0;
   const omega = 125.04455501 - 1934.13626197 * T + 0.0020762 * T * T + (T * T * T) / 467410 - (T * T * T * T) / 60616000;
   return norm360(omega);
@@ -84,38 +84,29 @@ function meanLunarNodeLongitude(date: Date) {
 
 /* ========================= Ephemeris Setup ========================= */
 
-type PlanetRow = {
-  key: string;
-  body?: Astronomy.Body;
-  color: string;
-  elon: number;        // ecliptic longitude (tropical)
-  optional?: boolean;
-  isNode?: boolean;
-};
-
-const BODIES: PlanetRow[] = [
-  { key: "Sun",     body: Astronomy.Body.Sun,     color: "#ffb703", elon: 0 },
-  { key: "Moon",    body: Astronomy.Body.Moon,    color: "#8ecae6", elon: 0 },
-  { key: "Mercury", body: Astronomy.Body.Mercury, color: "#adb5bd", elon: 0 },
-  { key: "Venus",   body: Astronomy.Body.Venus,   color: "#ffafcc", elon: 0 },
-  { key: "Mars",    body: Astronomy.Body.Mars,    color: "#e63946", elon: 0 },
-  { key: "Jupiter", body: Astronomy.Body.Jupiter, color: "#ffd166", elon: 0 },
-  { key: "Saturn",  body: Astronomy.Body.Saturn,  color: "#cdb4db", elon: 0 },
-  { key: "Uranus",  body: Astronomy.Body.Uranus,  color: "#94d2bd", elon: 0, optional: true },
-  { key: "Neptune", body: Astronomy.Body.Neptune, color: "#90caf9", elon: 0, optional: true },
-  { key: "Pluto",   body: Astronomy.Body.Pluto,   color: "#bfb8da", elon: 0, optional: true }
+const BODIES = [
+  { key: "Sun",     body: Astronomy.Body.Sun,     color: "#ffb703" },
+  { key: "Moon",    body: Astronomy.Body.Moon,    color: "#8ecae6" },
+  { key: "Mercury", body: Astronomy.Body.Mercury, color: "#adb5bd" },
+  { key: "Venus",   body: Astronomy.Body.Venus,   color: "#ffafcc" },
+  { key: "Mars",    body: Astronomy.Body.Mars,    color: "#e63946" },
+  { key: "Jupiter", body: Astronomy.Body.Jupiter, color: "#ffd166" },
+  { key: "Saturn",  body: Astronomy.Body.Saturn,  color: "#cdb4db" },
+  { key: "Uranus",  body: Astronomy.Body.Uranus,  color: "#94d2bd", optional: true },
+  { key: "Neptune", body: Astronomy.Body.Neptune, color: "#90caf9", optional: true },
+  { key: "Pluto",   body: Astronomy.Body.Pluto,   color: "#bfb8da", optional: true }
 ];
 
-function usePlanetLongitudes(date: Date, useMeanNode: boolean) {
-  return useMemo<PlanetRow[]>(() => {
-    const results: PlanetRow[] = [];
+function usePlanetLongitudes(date, useMeanNode) {
+  return useMemo(() => {
+    const results = [];
     for (const item of BODIES) {
-      const vec = Astronomy.GeoVector(item.body!, date, true);
-      const ecl = Astronomy.Ecliptic(vec); // true ecliptic-of-date
+      const vec = Astronomy.GeoVector(item.body, date, true);
+      const ecl = Astronomy.Ecliptic(vec); // ecliptic-of-date
       results.push({
         key: item.key,
         color: item.color,
-        body: item.body,             // keep body for motion sampling
+        body: item.body,                    // keep body for retrograde sampling
         elon: norm360(ecl.elon),
         optional: !!item.optional
       });
@@ -131,7 +122,7 @@ function usePlanetLongitudes(date: Date, useMeanNode: boolean) {
 
 /* ========================= Collision Resolver ========================= */
 
-function resolveCollisions<T extends { lon: number; _bump?: number }>(points: T[], minSepDeg = 4): T[] {
+function resolveCollisions(points, minSepDeg = 4) {
   const sorted = [...points].sort((a, b) => a.lon - b.lon);
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1], cur = sorted[i];
@@ -146,21 +137,7 @@ function resolveCollisions<T extends { lon: number; _bump?: number }>(points: T[
   return points;
 }
 
-/* ========================= Wheel Component ========================= */
-
-type WheelProps = {
-  date: Date;
-  ayanamshaDeg: number;
-  useSidereal: boolean;
-  showOuterPlanets: boolean;
-  showNakshatraGrid: boolean;
-  showAspects: boolean;
-  aspectOrb: number;
-  enabledAspects: Record<number, boolean>;
-  useMeanNode: boolean;
-  labelsOutside: boolean;
-  showDevanagari: boolean;
-};
+/* ========================= Wheel Component (plain JS props) ========================= */
 
 function Wheel({
   date,
@@ -174,8 +151,7 @@ function Wheel({
   useMeanNode,
   labelsOutside,
   showDevanagari
-}: WheelProps) {
-
+}) {
   const planets = usePlanetLongitudes(date, useMeanNode);
   const filtered = planets.filter(p => showOuterPlanets || !p.optional);
   const points = filtered.map(p => ({ ...p, lon: useSidereal ? norm360(p.elon - ayanamshaDeg) : p.elon }));
@@ -186,27 +162,22 @@ function Wheel({
   const outer = 320;   // outer radius
   const inner = 250;   // planet ring
 
-  const angleToXY = (angleDeg: number, r: number) => {
+  function angleToXY(angleDeg, r) {
     // 0° Aries at right (3 o'clock)
     const a = (0 - angleDeg) * DEG2RAD;
     return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
-  };
+  }
 
-  const hasAspect = (a: number, b: number) => {
+  function hasAspect(a, b) {
     const ang = Math.min(norm360(a - b), norm360(b - a));
     return Object.keys(enabledAspects)
       .filter(k => enabledAspects[+k])
       .map(k => parseFloat(k))
       .some(target => Math.abs(ang - target) <= aspectOrb);
-  };
+  }
 
-  /* ---------- Prep CSV rows (kept fresh for export/copy) ---------- */
-  const csvRows: (string | number)[][] = [["Body", "Rasi", "Nakshatra", "Longitude"]];
-
-  useEffect(() => {
-    // Make available to header buttons
-    (window as any).__lastPlacementsCSV = csvRows;
-  }, [csvRows]);
+  // Prep CSV rows (kept in a ref-like variable each render; picked by buttons below via closure)
+  const csvRows = [["Body", "Rasi", "Nakshatra", "Longitude"]];
 
   return (
     <div className="flex flex-col lg:flex-row gap-6">
@@ -284,14 +255,14 @@ function Wheel({
         <circle cx={cx} cy={cy} r={inner} fill="none" stroke="#e2e8f0" strokeWidth={1} />
 
         {/* Aspect lines */}
-        {showAspects && points.map((a, i) => (
+        {showAspects && points.map((a, i) =>
           points.slice(i + 1).map((b, j) => {
             if (!hasAspect(a.lon, b.lon)) return null;
             const pa = angleToXY(a.lon, inner);
             const pb = angleToXY(b.lon, inner);
-            return <line key={`asp-${i}-${j}`} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} stroke="#64748b" strokeWidth={1} opacity={0.6} />
+            return <line key={`asp-${i}-${j}`} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} stroke="#64748b" strokeWidth={1} opacity={0.6} />;
           })
-        ))}
+        )}
 
         {/* Planet markers with anti-collision + retrograde marker */}
         {(() => {
@@ -307,18 +278,23 @@ function Wheel({
 
             // safe retrograde check (skip nodes & luminaries)
             let retro = false;
-            if (p.body && !p.isNode && p.key !== "Sun" && p.key !== "Moon") {
-              const dtm = new Date(date.getTime() - 12 * 3600000);
-              const dtp = new Date(date.getTime() + 12 * 3600000);
-              const prev = Astronomy.Ecliptic(Astronomy.GeoVector(p.body, dtm, true)).elon;
-              const next = Astronomy.Ecliptic(Astronomy.GeoVector(p.body, dtp, true)).elon;
-              let delta = norm360(next - prev); if (delta > 180) delta -= 360;
-              retro = delta < 0;
+            try {
+              if (p.body && !p.isNode && p.key !== "Sun" && p.key !== "Moon") {
+                const dtm = new Date(date.getTime() - 12 * 3600000);
+                const dtp = new Date(date.getTime() + 12 * 3600000);
+                const prev = Astronomy.Ecliptic(Astronomy.GeoVector(p.body, dtm, true)).elon;
+                const next = Astronomy.Ecliptic(Astronomy.GeoVector(p.body, dtp, true)).elon;
+                let delta = norm360(next - prev); if (delta > 180) delta -= 360;
+                retro = delta < 0;
+              }
+            } catch (e) {
+              // if anything goes wrong here, keep rendering without retro flag
+              retro = false;
             }
 
             return (
               <g key={`p-${p.key}`}>
-                <circle cx={pos.x} cy={pos.y} r={7} fill={p.color} stroke="#0f172a" strokeWidth={1} filter="url(#softGlow)" />
+                <circle cx={pos.x} cy={pos.y} r={7} fill={p.color} stroke="#0f172a" strokeWidth={1} />
                 <line x1={pos.x} y1={pos.y} x2={pos.x} y2={pos.y - stem} stroke={p.color} strokeWidth={1} />
                 <text x={pos.x} y={pos.y - textY} textAnchor="middle" className="fill-slate-800" style={{ fontSize: 12, fontWeight: 700 }}>
                   {p.key}{retro ? " ℞" : ""}
@@ -342,14 +318,18 @@ function Wheel({
           <div className="flex gap-2">
             <button
               onClick={() => {
-                // Export table to CSV from window cache
-                const rows = (window as any).__lastPlacementsCSV || [];
-                const csv = rows.map((r: any[]) => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
-                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url; a.download = 'placements.csv'; a.click();
-                URL.revokeObjectURL(url);
+                // Export table to CSV (from closure)
+                try {
+                  const rows = csvRows || [];
+                  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+                  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url; a.download = 'placements.csv'; a.click();
+                  URL.revokeObjectURL(url);
+                } catch {
+                  alert("CSV export failed");
+                }
               }}
               className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100">
               Export CSV
@@ -357,38 +337,45 @@ function Wheel({
             <button
               onClick={async () => {
                 try {
-                  const rows = (window as any).__lastPlacementsCSV || [];
-                  const tsv = rows.map((r: any[]) => r.join("\t")).join("\n");
+                  const rows = csvRows || [];
+                  const tsv = rows.map(r => r.join("\t")).join("\n");
                   await navigator.clipboard.writeText(tsv);
                   alert("Copied placements to clipboard.");
-                } catch { alert("Copy failed."); }
+                } catch {
+                  alert("Copy failed.");
+                }
               }}
               className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100">
               Copy CSV
             </button>
             <button
               onClick={() => {
-                const svg = document.querySelector('svg')!;
-                const xml = new XMLSerializer().serializeToString(svg);
-                const svg64 = btoa(unescape(encodeURIComponent(xml)));
-                const image64 = 'data:image/svg+xml;base64,' + svg64;
-                const img = new Image();
-                img.onload = function () {
-                  const canvas = document.createElement('canvas');
-                  // @ts-ignore viewBox may be undefined in TS typings
-                  canvas.width = svg.viewBox?.baseVal?.width || (svg as any).width.baseVal.value;
-                  // @ts-ignore
-                  canvas.height = svg.viewBox?.baseVal?.height || (svg as any).height.baseVal.value;
-                  const ctx = canvas.getContext('2d')!;
-                  ctx.fillStyle = '#ffffff';
-                  ctx.fillRect(0, 0, canvas.width, canvas.height);
-                  ctx.drawImage(img, 0, 0);
-                  const link = document.createElement('a');
-                  link.download = 'vedic-wheel.png';
-                  link.href = canvas.toDataURL('image/png');
-                  link.click();
-                };
-                img.src = image64;
+                try {
+                  const svg = document.querySelector('svg');
+                  if (!svg) return;
+                  const xml = new XMLSerializer().serializeToString(svg);
+                  const svg64 = btoa(unescape(encodeURIComponent(xml)));
+                  const image64 = 'data:image/svg+xml;base64,' + svg64;
+                  const img = new Image();
+                  img.onload = function () {
+                    const canvas = document.createElement('canvas');
+                    // fallback sizes if viewBox missing
+                    const vb = svg.viewBox && svg.viewBox.baseVal ? svg.viewBox.baseVal : null;
+                    canvas.width = vb ? vb.width : (svg.width && svg.width.baseVal ? svg.width.baseVal.value : 740);
+                    canvas.height = vb ? vb.height : (svg.height && svg.height.baseVal ? svg.height.baseVal.value : 740);
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+                    const link = document.createElement('a');
+                    link.download = 'vedic-wheel.png';
+                    link.href = canvas.toDataURL('image/png');
+                    link.click();
+                  };
+                  img.src = image64;
+                } catch {
+                  alert("PNG export failed");
+                }
               }}
               className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100">
               Export PNG
@@ -415,7 +402,7 @@ function Wheel({
               const sidLon = norm360(p.elon - ayanamshaDeg); // sidereal lon for nakshatra
               const nk = nakshatraOf(sidLon);
 
-              // feed CSV row
+              // feed CSV row (per render; fine for ad-hoc export)
               csvRows.push([
                 p.key,
                 `${showDevanagari ? z.signGlyph + " " : ""}${z.sign} ${z.deg}°${z.min.toString().padStart(2, "0")}′`,
@@ -438,21 +425,26 @@ function Wheel({
         </table>
 
         <div className="mt-4 text-xs text-slate-500 leading-relaxed space-y-2">
-          <p>Mode: <span className="font-semibold">{useSidereal ? "Sidereal (ayanāṁśa applied)" : "Tropical (no ayanāṁśa)"}</span> • Nodes: <span className="font-semibold">{useMeanNode ? "Mean" : "True (TBD)"}</span></p>
+          <p>
+            Mode: <span className="font-semibold">{useSidereal ? "Sidereal (ayanāṁśa applied)" : "Tropical (no ayanāṁśa)"}</span>
+            {" • "}Nodes: <span className="font-semibold">{useMeanNode ? "Mean" : "True (TBD)"}</span>
+          </p>
         </div>
       </div>
     </div>
   );
 }
 
-/* ========================= Page Component ========================= */
+/* ========================= Page Component (no TS; no window hacks) ========================= */
 
 export default function VedicZodiacWheel() {
   const [whenIso, setWhenIso] = useState(() => {
     const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, "0");
+    const pad = (n) => n.toString().padStart(2, "0");
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
   });
+
+  // core toggles
   const [useSidereal, setUseSidereal] = useState(true);
   const [ayanamsha, setAyanamsha] = useState(24.1);
   const [showOuterPlanets, setShowOuterPlanets] = useState(true);
@@ -460,20 +452,19 @@ export default function VedicZodiacWheel() {
   const [useMeanNode, setUseMeanNode] = useState(true);
   const [showAspects, setShowAspects] = useState(true);
   const [aspectOrb, setAspectOrb] = useState(6);
-  const [enabledAspects, setEnabledAspects] = useState<Record<number, boolean>>({ 0: true, 60: false, 90: true, 120: true, 180: true });
+  const [enabledAspects, setEnabledAspects] = useState({ 0: true, 60: false, 90: true, 120: true, 180: true });
 
-  // New UI toggles
+  // new UI toggles
   const [labelsOutside, setLabelsOutside] = useState(true);
   const [showDevanagari, setShowDevanagari] = useState(true);
 
-  // Time navigator
+  // time nav
   const baseDate = useMemo(() => new Date(whenIso), [whenIso]);
   const [offsetHours, setOffsetHours] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [stepHours, setStepHours] = useState(6);
   const [rangeDays, setRangeDays] = useState(90);
   const [tickMs, setTickMs] = useState(200);
-
   const date = useMemo(() => new Date(baseDate.getTime() + offsetHours * 3600000), [baseDate, offsetHours]);
 
   useEffect(() => {
@@ -499,12 +490,12 @@ export default function VedicZodiacWheel() {
 
   return (
     <div className="p-4 lg:p-6 font-sans text-slate-800">
-      <h1 className="text-2xl font-extrabold mb-2">Vedic Zodiac Wheel — Earth-Centered (v2.2)</h1>
+      <h1 className="text-2xl font-extrabold mb-2">Vedic Zodiac Wheel — Earth-Centered (JS v2.3)</h1>
       <p className="text-slate-600 mb-4">
-        Sidereal option, outer planets, 27 nakshatra grid, aspect lines, retrograde marker, overlap-safe labels, PNG/CSV export, and UI toggles for label placement & Devanagari.
+        Sidereal option, outer planets, 27 nakshatra grid, aspects, retrograde marker, overlap-safe labels, PNG/CSV export, and UI toggles for label placement & Devanagari.
       </p>
 
-      {/* Date & Ayanamsha controls */}
+      {/* Date & Ayanamsha */}
       <div className="flex flex-wrap items-end gap-4 mb-4">
         <label className="text-sm">
           <span className="block text-slate-600 mb-1">Date & Time</span>
