@@ -537,13 +537,13 @@ export default function VedicZodiacWheel() {
   const [showDevanagari, setShowDevanagari] = useState(true);
 
   // time nav
-  const baseDate = useMemo(() => new Date(whenIso), [whenIso]);
+  const baseDate = new Date(whenIso);
   const [offsetHours, setOffsetHours] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [stepHours, setStepHours] = useState(6);
   const [rangeDays, setRangeDays] = useState(90);
   const [tickMs, setTickMs] = useState(200);
-  const date = useMemo(() => new Date(baseDate.getTime() + offsetHours * 3600000), [baseDate, offsetHours]);
+  const date = new Date(baseDate.getTime() + offsetHours * 3600000);
 
   useEffect(() => {
     if (!isPlaying) return;
