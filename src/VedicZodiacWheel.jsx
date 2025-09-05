@@ -188,11 +188,11 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
   const filtered = planets.filter(p => showOuterPlanets || !p.optional);
   const points = filtered.map(p => ({ ...p, lon: useSidereal ? norm360(p.elon - ayanamshaDeg) : p.elon }));
   // ---- Ascendant + Equal-House cusps ----
-  const ascTropical = useMemo(() => computeAscendantDeg(date, lat, lon), [date, lat, lon]);
+  const ascTropical = computeAscendantDeg(date, lat, lon);
 
   // We’ll pass lat/lon via window.*; see section E to keep Wheel decoupled from parent.
   const ascToUse = useSidereal ? norm360(ascTropical - ayanamshaDeg) : ascTropical;
-  const houseCusps = useMemo(() => equalHouseCusps(ascToUse), [ascToUse]);
+  const houseCusps = equalHouseCusps(ascToUse);
 
 
   // SVG geometry
