@@ -56,15 +56,6 @@ const NAKSHATRAS = [
 const NAK_SIZE = 360 / 27;      // 13°20′
 const PADA_SIZE = NAK_SIZE / 4; // 3°20′
 
-// Local Sidereal Time at observer longitude (hours -> radians)
-function lstRadians(date, longitudeDeg) {
-  // Apparent sidereal time at Greenwich in HOURS
-  const sth = Astronomy.SiderealTime(date); // returns hours
-  // Local sidereal time in DEGREES (east longitudes positive)
-  const lstDeg = (sth * 15) + longitudeDeg;
-  return (lstDeg * Math.PI) / 180;
-}
-
 // Local Sidereal Time in radians (east longitudes positive)
 function lstRadians(date, longitudeDeg) {
   const sth = Astronomy.SiderealTime(date);      // hours
@@ -191,7 +182,7 @@ function resolveCollisions(points, minSepDeg = 4) {
 
 /* ========================= Wheel Component (plain JS props) ========================= */
 
-function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatraGrid, showAspects, aspectOrb, enabledAspects, useMeanNode, lat, lon }) {
+function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatraGrid, showAspects, aspectOrb, enabledAspects, useMeanNode, labelsOutside = true, showDevanagari = true, lat, lon }) {
 
   const planets = usePlanetLongitudes(date, useMeanNode);
   const filtered = planets.filter(p => showOuterPlanets || !p.optional);
@@ -700,6 +691,8 @@ export default function VedicZodiacWheel() {
         aspectOrb={aspectOrb}
         enabledAspects={enabledAspects}
         useMeanNode={useMeanNode}
+        labelsOutside={labelsOutside}
+        showDevanagari={showDevanagari}
         lat={lat}
         lon={lon}
       />
