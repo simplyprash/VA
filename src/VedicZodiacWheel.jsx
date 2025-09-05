@@ -51,7 +51,7 @@ const NAKSHATRAS = [
   { en: "Uttara Bhadrapada", dev: "\u0909\u0924\u094d\u0924\u0930\u092d\u093e\u0926\u094d\u0930\u092a\u0926\u093e" },
   { en: "Revati",            dev: "\u0930\u0947\u0935\u0924\u0940" }
 ];
-const RASI_DEV = "\u0930\u093e\u0936\u093f";
+
 const NAK_SIZE = 360/27;       // 13°20′ per nakshatra
 const PADA_SIZE = NAK_SIZE/4;  // 3°20′ per pada
 function nakshatraOf(siderealLon) {
@@ -110,7 +110,7 @@ function usePlanetLongitudes(date, useMeanNode) {
   }, [date, useMeanNode]);
 }
 
-function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatraGrid, showAspects, aspectOrb, enabledAspects, useMeanNode, observer, showAsc, showHouses }) {
+function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatraGrid, showAspects, aspectOrb, enabledAspects, useMeanNode }) {
   const planets = usePlanetLongitudes(date, useMeanNode);
   const filtered = planets.filter(p => showOuterPlanets || !p.optional);
   const points = filtered.map(p => ({ ...p, lon: useSidereal ? norm360(p.elon - ayanamshaDeg) : p.elon }));
@@ -135,67 +135,6 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
       .some(target => Math.abs(ang - target) <= aspectOrb);
   };
 
-  // Ascendant & whole-sign houses
-  const eps = Astronomy.Tilt(date).eps; // obliquity in deg
-  function raDecFromLambda(lambdaDeg) {
-    const epsRad = eps * DEG2RAD; const lam = lambdaDeg * DEG2RAD;
-    const sinlam = Math.sin(lam), coslam = Math.cos(lam);
-    const coseps = Math.cos(epsRad), sineps = Math.sin(epsRad);
-    const dec = Math.asin(sinlam * sineps) / DEG2RAD; // deg
-    const ra = Math.atan2(sinlam * coseps, coslam) / (15 * Math.PI/180); // hours
-    return { ra, dec };
-  }
-  function ascendantLongitude(date, obs) {
-    let bestLam = 0, bestScore = 1e9, bestAzErr = 1e9;
-    for (let lam=0; lam<360; lam+=5) {
-      const { ra, dec } = raDecFromLambda(lam);
-      const h = Astronomy.Horizon(date, { latitude: obs.lat, longitude: obs.lon, height: obs.elev }, ra, dec, 'normal');
-      const score = Math.abs(h.alt);
-      const azErr = Math.abs((h.az||0) - 90);
-      if (h.az>45 && h.az<135 && (score < bestScore || (Math.abs(score-bestScore)<0.01 && azErr < bestAzErr))) { bestScore = score; bestAzErr = azErr; bestLam = lam; }
-    }
-    // refine
-    let lam = bestLam; let step = 1;
-    for (let iter=0; iter<3; iter++) {
-      let localBest = lam, localScore = 1e9;
-      for (let x=lam-5; x<=lam+5; x+=step) {
-        const { ra, dec } = raDecFromLambda(norm360(x));
-        const h = Astronomy.Horizon(date, { latitude: obs.lat, longitude: obs.lon, height: obs.elev }, ra, dec, 'normal');
-        const score = Math.abs(h.alt) + 0.01*Math.abs((h.az||0)-90);
-        if (score < localScore) { localScore = score; localBest = norm360(x); }
-      }
-      lam = localBest; step /= 5;
-    }
-    return norm360(lam);
-  }
-  const ascLon = ascendantLongitude(date, observer);
-  const ascSignStart = Math.floor(ascLon/30)*30;
-  const houseCusps = Array.from({length:12}, (_,i)=> norm360(ascSignStart + i*30));
-
-  // label clustering to reduce overlap
-  function computeLabelLevels(pts, thresholdDeg = 3) {
-    if (!pts || pts.length === 0) return new Map();
-    const arr = pts.map((p, i) => ({ i, lon: p.lon })).sort((a, b) => a.lon - b.lon);
-    const groups = [];
-    let group = [arr[0]];
-    for (let k = 1; k < arr.length; k++) {
-      const prev = arr[k - 1];
-      const curr = arr[k];
-      if (curr.lon - prev.lon <= thresholdDeg) group.push(curr);
-      else { groups.push(group); group = [curr]; }
-    }
-    groups.push(group);
-    const first = arr[0], last = arr[arr.length - 1];
-    if ((first.lon + 360 - last.lon) <= thresholdDeg && groups.length > 1) {
-      const tail = groups.pop();
-      groups[0] = tail.concat(groups[0]);
-    }
-    const map = new Map();
-    groups.forEach(g => g.forEach((e, idx) => map.set(e.i, idx)));
-    return map;
-  }
-  const labelLevels = computeLabelLevels(points, 3);
-
   return (
     <div className="flex flex-col lg:flex-row gap-6">
       <svg width={size} height={size} className="rounded-2xl shadow border bg-white">
@@ -216,7 +155,7 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
         {/* Outer ring */}
         <circle cx={cx} cy={cy} r={outer} fill="#fff" stroke="#0f172a" strokeWidth={2} />
 
-        {/* 12 sign wedges grid with external labels */}
+        {/* 12 sign wedges grid */}
         {Array.from({ length: 12 }).map((_, i) => {
           const angle = i * 30;
           const p = angleToXY(angle, outer);
@@ -261,15 +200,6 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
         {/* Inner ring for planets */}
         <circle cx={cx} cy={cy} r={inner} fill="none" stroke="#e2e8f0" strokeWidth={1} />
 
-        {/* Houses (whole sign) */}
-        {showHouses && houseCusps.map((ang,idx)=>{
-          const p = angleToXY(ang, outer);
-          return <line key={`house-${idx}`} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="#e5e7eb" strokeWidth={1} />
-        })}
-
-        {/* Ascendant */}
-        {showAsc && (()=>{ const p = angleToXY(ascLon, outer); return <line x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="#1d4ed8" strokeWidth={2} /> })()}
-
         {/* Aspect lines */}
         {showAspects && points.map((a,i) => (
           points.slice(i+1).map((b,j) => {
@@ -280,18 +210,16 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
           })
         ))}
 
-        {/* Planet markers with de-overlapped labels */}
-        {points.map((p, idx) => {
+        {/* Planet markers */}
+        {points.map((p) => {
           const pos = angleToXY(p.lon, inner);
-          const lvl = labelLevels.get(idx) || 0;
-          const lab = angleToXY(p.lon, inner + 26 + lvl * 14);
           const label = zodiacBreakdown(p.lon);
           return (
             <g key={`p-${p.key}`}>
               <circle cx={pos.x} cy={pos.y} r={7} fill={p.color} stroke="#0f172a" strokeWidth={1} filter="url(#softGlow)" />
-              <line x1={pos.x} y1={pos.y} x2={lab.x} y2={lab.y} stroke={p.color} strokeWidth={1} />
-              <text x={lab.x} y={lab.y - 4} textAnchor="middle" className="fill-slate-800" style={{ fontSize: 12, fontWeight: 700 }}>{p.key}</text>
-              <text x={lab.x} y={lab.y + 10} textAnchor="middle" className="fill-slate-600" style={{ fontSize: 11 }}>{`${label.deg}°${label.min.toString().padStart(2, "0")}′`}</text>
+              <line x1={pos.x} y1={pos.y} x2={pos.x} y2={pos.y - 22} stroke={p.color} strokeWidth={1} />
+              <text x={pos.x} y={pos.y - 28} textAnchor="middle" className="fill-slate-800" style={{ fontSize: 12, fontWeight: 700 }}>{p.key}</text>
+              <text x={pos.x} y={pos.y - 14} textAnchor="middle" className="fill-slate-600" style={{ fontSize: 11 }}>{`${label.deg}°${label.min.toString().padStart(2, "0")}′`}</text>
             </g>
           );
         })}
@@ -336,7 +264,7 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
           <thead>
             <tr className="text-left text-slate-500">
               <th className="pb-1">Body</th>
-              <th className="pb-1">Rasi ({RASI_DEV})</th>
+              <th className="pb-1">Rasi (\u0930\u093e\u0936\u093f)</th>
               <th className="pb-1">Nakshatra</th>
               <th className="pb-1">Longitude</th>
             </tr>
@@ -357,6 +285,31 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
             })}
           </tbody>
         </table>
+
+        <div className="mt-4 text-xs text-slate-500 leading-relaxed space-y-2">
+          <p>Mode: <span className="font-semibold">{useSidereal ? "Sidereal (ayanāṁśa applied)" : "Tropical (no ayanāṁśa)"}</span> • Nodes: <span className="font-semibold">{useMeanNode?"Mean":"True (TBD)"}</span></p>
+          <div className="pt-2 border-t">
+            <div className="flex flex-wrap gap-3 items-center text-sm">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={showOuterPlanets} onChange={(e)=>window.setShowOuter(e.target.checked)} /> Show Uranus/Neptune/Pluto</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={showNakshatraGrid} onChange={(e)=>window.setShowNak(e.target.checked)} /> Nakshatra grid</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={showAspects} onChange={(e)=>window.setShowAsp(e.target.checked)} /> Aspects</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={useMeanNode} onChange={(e)=>window.setNodeMode(e.target.checked)} /> Mean node (true TBD)</label>
+              {showAspects && (
+                <>
+                  <span className="text-slate-500">Aspects:</span>
+                  {[0,60,90,120,180].map(a => (
+                    <label key={`asp-${a}`} className="flex items-center gap-1">
+                      <input type="checkbox" checked={!!enabledAspects[a]} onChange={() => window.toggleAspect(a)} />{a}°
+                    </label>
+                  ))}
+                  <label className="flex items-center gap-2">
+                    Orb <input type="number" min={0} max={10} step={0.5} value={aspectOrb} onChange={(e)=>window.setOrb(parseFloat(e.target.value||"0"))} className="border rounded px-2 py-1 w-20" />°
+                  </label>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -377,20 +330,7 @@ export default function VedicZodiacWheel() {
   const [aspectOrb, setAspectOrb] = useState(6);
   const [enabledAspects, setEnabledAspects] = useState({ 0: true, 60: false, 90: true, 120: true, 180: true });
 
-  // Place & TZ
-  const [observer, setObserver] = useState({ lat: 19.0760, lon: 72.8777, elev: 0, label: 'Mumbai, IN' });
-  const [tzOffset, setTzOffset] = useState(5.5); // hours offset from UTC
-  const [showAsc, setShowAsc] = useState(true);
-  const [showHouses, setShowHouses] = useState(true);
-
-  function parseLocalIsoToUtcMs(iso, offsetHours) {
-    const [d, t] = iso.split('T');
-    const [Y, M, D] = d.split('-').map(Number);
-    const [h, m] = t.split(':').map(Number);
-    return Date.UTC(Y, M - 1, D, h, m) - offsetHours * 3600000;
-  }
-  const baseUtcMs = useMemo(() => parseLocalIsoToUtcMs(whenIso, tzOffset), [whenIso, tzOffset]);
-  const baseDate = useMemo(() => new Date(baseUtcMs), [baseUtcMs]);
+  const baseDate = useMemo(() => new Date(whenIso), [whenIso]);
 
   const [offsetHours, setOffsetHours] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -398,7 +338,7 @@ export default function VedicZodiacWheel() {
   const [rangeDays, setRangeDays] = useState(90);
   const [tickMs, setTickMs] = useState(200);
 
-  const date = useMemo(() => new Date(baseUtcMs + offsetHours * 3600000), [baseUtcMs, offsetHours]);
+  const date = useMemo(() => new Date(baseDate.getTime() + offsetHours * 3600000), [baseDate, offsetHours]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -436,12 +376,12 @@ export default function VedicZodiacWheel() {
 
   return (
     <div className="p-4 lg:p-6 font-sans text-slate-800">
-      <h1 className="text-2xl font-extrabold mb-2">Vedic Zodiac Wheel — Earth-Centered (v2.4)</h1>
-      <p className="text-slate-600 mb-4">Place & UTC offset, Ascendant line, whole-sign houses, de-overlapped labels, nakshatra table, aspects, PNG export, and time scroller.</p>
+      <h1 className="text-2xl font-extrabold mb-2">Vedic Zodiac Wheel — Earth‑Centered (v2.1)</h1>
+      <p className="text-slate-600 mb-4">Sidereal option, outer planets, 27 nakshatra grid, aspects, PNG export, and a Nakshatra column in the table with Hindi labels for rāśi.</p>
 
       <div className="flex flex-wrap items-end gap-4 mb-4">
         <label className="text-sm">
-          <span className="block text-slate-600 mb-1">Date & Time (local for chosen UTC offset)</span>
+          <span className="block text-slate-600 mb-1">Date & Time</span>
           <input type="datetime-local" value={whenIso} onChange={(e) => setWhenIso(e.target.value)} className="border rounded-lg px-3 py-2" />
         </label>
 
@@ -464,39 +404,6 @@ export default function VedicZodiacWheel() {
         </div>
       </div>
 
-      {/* Place & Timezone */}
-      <div className="mb-4 p-3 bg-slate-50 rounded-xl border">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-sm">
-            <span className="block text-slate-600 mb-1">Latitude</span>
-            <input type="number" step="0.0001" value={observer.lat} onChange={(e)=>setObserver(o=>({...o, lat: parseFloat(e.target.value||"0")}))} className="border rounded px-2 py-1 w-36" />
-          </label>
-          <label className="text-sm">
-            <span className="block text-slate-600 mb-1">Longitude</span>
-            <input type="number" step="0.0001" value={observer.lon} onChange={(e)=>setObserver(o=>({...o, lon: parseFloat(e.target.value||"0")}))} className="border rounded px-2 py-1 w-36" />
-          </label>
-          <label className="text-sm">
-            <span className="block text-slate-600 mb-1">Elevation (m)</span>
-            <input type="number" step="1" value={observer.elev} onChange={(e)=>setObserver(o=>({...o, elev: parseFloat(e.target.value||"0")}))} className="border rounded px-2 py-1 w-32" />
-          </label>
-          <label className="text-sm">
-            <span className="block text-slate-600 mb-1">UTC Offset (hrs)</span>
-            <input type="number" step="0.25" value={tzOffset} onChange={(e)=>setTzOffset(parseFloat(e.target.value||"0"))} className="border rounded px-2 py-1 w-32" />
-          </label>
-          <div className="flex gap-2 mt-6">
-            <button className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100" onClick={()=>{ setObserver({lat:19.0760, lon:72.8777, elev:0, label:'Mumbai, IN'}); setTzOffset(5.5); }}>Mumbai</button>
-            <button className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100" onClick={()=>{ setObserver({lat:40.7128, lon:-74.0060, elev:10, label:'New York, US'}); setTzOffset(-4); }}>New York</button>
-            <button className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100" onClick={()=>{ setObserver({lat:51.5072, lon:-0.1276, elev:15, label:'London, UK'}); setTzOffset(1); }}>London</button>
-            <button className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100" onClick={()=>{ if (navigator.geolocation) { navigator.geolocation.getCurrentPosition(pos => { setObserver(o=>({...o, lat: pos.coords.latitude, lon: pos.coords.longitude, label:'My location'})); }); } }}>Use my location</button>
-          </div>
-          <div className="ml-auto flex gap-4 mt-6 text-sm">
-            <label className="flex items-center gap-2"><input type="checkbox" checked={showAsc} onChange={(e)=>setShowAsc(e.target.checked)} /> Show Ascendant</label>
-            <label className="flex items-center gap-2"><input type="checkbox" checked={showHouses} onChange={(e)=>setShowHouses(e.target.checked)} /> Whole-sign houses</label>
-          </div>
-        </div>
-      </div>
-
-      {/* Time scroller */}
       <div className="mb-4 p-3 bg-slate-50 rounded-xl border">
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => setOffsetHours(h => h - stepHours)} className="px-2 py-1 text-sm border rounded hover:bg-slate-100">◀︎</button>
@@ -519,12 +426,7 @@ export default function VedicZodiacWheel() {
           </select>
         </div>
         <input type="range" min={-rangeDays*24} max={rangeDays*24} step={1} value={offsetHours} onChange={(e)=>setOffsetHours(parseInt(e.target.value))} className="w-full mt-3" />
-        <div className="text-xs text-slate-600 mt-1">
-          Base: {new Date(baseUtcMs + tzOffset*3600000).toLocaleString(undefined,{ dateStyle: "medium", timeStyle: "short"})} •
-          {" "}Offset: {offsetHours}h •
-          {" "}Showing: {new Date(baseUtcMs + (offsetHours + tzOffset)*3600000).toLocaleString(undefined,{ dateStyle: "medium", timeStyle: "short"})} •
-          {" "}UTC{tzOffset>=0?'+':''}{tzOffset}h
-        </div>
+        <div className="text-xs text-slate-600 mt-1">Base: {new Intl.DateTimeFormat(undefined,{ dateStyle: "medium", timeStyle: "short"}).format(baseDate)} • Offset: {offsetHours}h • Showing: {new Intl.DateTimeFormat(undefined,{ dateStyle: "medium", timeStyle: "short"}).format(date)}</div>
       </div>
 
       <div className="flex flex-wrap gap-4 mb-4 text-sm">
@@ -558,9 +460,6 @@ export default function VedicZodiacWheel() {
         aspectOrb={aspectOrb}
         enabledAspects={enabledAspects}
         useMeanNode={useMeanNode}
-        observer={observer}
-        showAsc={showAsc}
-        showHouses={showHouses}
       />
 
       <div className="mt-6 text-xs text-slate-500">
