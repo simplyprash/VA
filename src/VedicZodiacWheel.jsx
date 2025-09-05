@@ -121,17 +121,63 @@ function lstRadians(date, longitudeDeg){
 }
 
 function computeAscendantDeg(date, latitudeDeg, longitudeDeg){
-  const lat = Number.isFinite(+latitudeDeg) ? +latitudeDeg : 0;
-  const lon = Number.isFinite(+longitudeDeg) ? +longitudeDeg : 0;
-  let epsDeg = 23.4392911;
-  try{
-    const tilt = Astronomy.EarthTilt(date)||{};
-    epsDeg = Number.isFinite(tilt.obliq)? tilt.obliq : (Number.isFinite(tilt.obl)? tilt.obl : (Number.isFinite(tilt.eps)? tilt.eps : epsDeg));
-  }catch{}
-  const φ = lat*DEG2RAD; const θ = lstRadians(date, lon); const ε = epsDeg*DEG2RAD;
-  const y = Math.sin(θ)*Math.cos(ε) + Math.tan(φ)*Math.sin(ε);
-  const x = Math.cos(θ);
-  let λ = Math.atan2(y,x)/DEG2RAD; if(!isFinite(λ)) λ = 0; return norm360(λ);
+  // Robust numeric solution: find the ecliptic longitude (λ) on the horizon (alt≈0) with azimuth ≈ 90° (rising)
+  const φ = Math.max(-89.9999, Math.min(89.9999, Number(latitudeDeg)||0)) * DEG2RAD; // rad
+  const θ = lstRadians(date, Number(longitudeDeg)||0); // local sidereal angle in radians (east longitudes positive)
+
+  // true obliquity (of-date)
+  let epsDeg = 23.4392911; // fallback
+  try {
+    const tilt = Astronomy.EarthTilt(date) || {};
+    epsDeg = Number.isFinite(tilt.obliq) ? tilt.obliq : (Number.isFinite(tilt.obl) ? tilt.obl : (Number.isFinite(tilt.eps) ? tilt.eps : epsDeg));
+  } catch {}
+  const ε = epsDeg * DEG2RAD;
+
+  // helper: given ecliptic longitude (deg), return alt (rad) and az (deg)
+  function altAzFromLambda(lambdaDeg){
+    const λ = lambdaDeg * DEG2RAD;
+    const sinλ = Math.sin(λ), cosλ = Math.cos(λ);
+    const cosε = Math.cos(ε), sinε = Math.sin(ε);
+    // Equatorial from ecliptic (β=0):
+    const α = Math.atan2(sinλ * cosε, cosλ); // RA
+    const δ = Math.asin(sinλ * sinε);        // Dec
+    // Hour angle (normalize to -π..π for stability)
+    let H = θ - α; H = Math.atan2(Math.sin(H), Math.cos(H));
+    const sinφ = Math.sin(φ), cosφ = Math.cos(φ);
+    const sinδ = Math.sin(δ), cosδ = Math.cos(δ);
+    const sinAlt = sinφ * sinδ + cosφ * cosδ * Math.cos(H);
+    const alt = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
+    const cosAlt = Math.max(1e-12, Math.sqrt(Math.max(0, 1 - sinAlt*sinAlt))); // avoid division by 0
+    const sinAz = -Math.sin(H) * cosδ / cosAlt;
+    const cosAz = (sinδ - sinAlt * sinφ) / (cosAlt * cosφ);
+    let A = Math.atan2(sinAz, cosAz) / DEG2RAD; // deg
+    A = ((A % 360) + 360) % 360; // 0..360
+    return { alt, az: A };
+  }
+
+  // Scan 0..360° to find horizon crossings (alt sign changes), then bisect to refine
+  const roots = [];
+  let prev = altAzFromLambda(0), prevAlt = prev.alt;
+  const step = 5; // degrees
+  for (let L = step; L <= 360; L += step) {
+    const cur = altAzFromLambda(L); const curAlt = cur.alt;
+    if ((prevAlt <= 0 && curAlt >= 0) || (prevAlt >= 0 && curAlt <= 0)) {
+      // bracket [L-step, L]
+      let a = L - step, b = L, fa = altAzFromLambda(a).alt, fb = altAzFromLambda(b).alt;
+      for (let k = 0; k < 30; k++) { // bisection
+        const m = 0.5 * (a + b); const fm = altAzFromLambda(m).alt;
+        if (fa * fm <= 0) { b = m; fb = fm; } else { a = m; fa = fm; }
+      }
+      const mid = 0.5 * (a + b); const atMid = altAzFromLambda(mid);
+      roots.push({ lambda: mid, az: atMid.az });
+    }
+    prevAlt = curAlt;
+  }
+
+  // Choose the EASTERN intersection (az ~ 90°)
+  if (roots.length === 0) return 0; // fallback
+  roots.sort((r1, r2) => Math.abs(r1.az - 90) - Math.abs(r2.az - 90));
+  return ((roots[0].lambda % 360) + 360) % 360;
 }
 
 function equalHouseCusps(ascDeg){
