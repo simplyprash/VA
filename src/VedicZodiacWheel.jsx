@@ -1,28 +1,26 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import * as Astronomy from "astronomy-engine";
 
-/* ========================= Helpers & Constants (plain JS) ========================= */
+/* ========================= Helpers & Constants ========================= */
 
 const DEG2RAD = Math.PI / 180;
 function norm360(d) { let x = d % 360; if (x < 0) x += 360; return x; }
 
-// Zodiac labels (Devanagari via \uXXXX to avoid encoding surprises)
 const SIGNS = [
-  { name: "Aries",       short: "\u092e\u0947\u0937" },       // मेष
-  { name: "Taurus",      short: "\u0935\u0943\u0937\u092d" }, // वृषभ
-  { name: "Gemini",      short: "\u092e\u093f\u0925\u0941\u0928" }, // मिथुन
-  { name: "Cancer",      short: "\u0915\u0930\u094d\u0915" }, // कर्क
-  { name: "Leo",         short: "\u0938\u093f\u0902\u0939" }, // सिंह
-  { name: "Virgo",       short: "\u0915\u0928\u094d\u092f\u093e" }, // कन्या
-  { name: "Libra",       short: "\u0924\u0941\u0932\u093e" }, // तुला
-  { name: "Scorpio",     short: "\u0935\u0943\u0936\u094d\u091a\u093f\u0915" }, // वृश्चिक
-  { name: "Sagittarius", short: "\u0927\u0928\u0941" },       // धनु
-  { name: "Capricorn",   short: "\u092e\u0915\u0930" },       // मकर
-  { name: "Aquarius",    short: "\u0915\u0941\u0902\u092d" }, // कुंभ
-  { name: "Pisces",      short: "\u092e\u0940\u0928" }        // मीन
+  { name: "Aries",       short: "\u092e\u0947\u0937" },
+  { name: "Taurus",      short: "\u0935\u0943\u0937\u092d" },
+  { name: "Gemini",      short: "\u092e\u093f\u0925\u0941\u0928" },
+  { name: "Cancer",      short: "\u0915\u0930\u094d\u0915" },
+  { name: "Leo",         short: "\u0938\u093f\u0902\u0939" },
+  { name: "Virgo",       short: "\u0915\u0928\u094d\u092f\u093e" },
+  { name: "Libra",       short: "\u0924\u0941\u0932\u093e" },
+  { name: "Scorpio",     short: "\u0935\u0943\u0936\u094d\u091a\u093f\u0915" },
+  { name: "Sagittarius", short: "\u0927\u0928\u0941" },
+  { name: "Capricorn",   short: "\u092e\u0915\u0930" },
+  { name: "Aquarius",    short: "\u0915\u0941\u0902\u092d" },
+  { name: "Pisces",      short: "\u092e\u0940\u0928" }
 ];
 
-// 27 Nakshatras (English + Devanagari via safe escapes)
 const NAKSHATRAS = [
   { en: "Ashwini",           dev: "\u0905\u0936\u094d\u0935\u093f\u0928\u0940" },
   { en: "Bharani",           dev: "\u092d\u0930\u0923\u0940" },
@@ -53,57 +51,14 @@ const NAKSHATRAS = [
   { en: "Revati",            dev: "\u0930\u0947\u0935\u0924\u0940" }
 ];
 
-const NAK_SIZE = 360 / 27;      // 13°20′
-const PADA_SIZE = NAK_SIZE / 4; // 3°20′
-
-// Local Sidereal Time in radians (east longitudes positive)
-function lstRadians(date, longitudeDeg) {
-  const sth = Astronomy.SiderealTime(date);      // hours
-  let lstDeg = sth * 15 + (Number(longitudeDeg) || 0);
-  lstDeg = ((lstDeg % 360) + 360) % 360;         // normalize
-  return lstDeg * Math.PI / 180;
-}
-
-// Robust Ascendant: tolerates bad lat/lon and library field differences
-function computeAscendantDeg(date, latitudeDeg, longitudeDeg) {
-  const lat = Number.isFinite(+latitudeDeg) ? +latitudeDeg : 0;
-  const lon = Number.isFinite(+longitudeDeg) ? +longitudeDeg : 0;
-
-  // obliquity fallback chain (different astronomy-engine versions expose different keys)
-  const tilt = Astronomy.EarthTilt(date) || {};
-  const epsDeg =
-    (typeof tilt.obliq === "number" && isFinite(tilt.obliq)) ? tilt.obliq :
-    (typeof tilt.obl   === "number" && isFinite(tilt.obl))   ? tilt.obl   :
-    (typeof tilt.eps   === "number" && isFinite(tilt.eps))   ? tilt.eps   :
-    23.4392911; // safe default
-
-  const φ   = lat * Math.PI / 180;
-  const θ   = lstRadians(date, lon);
-  const ε   = epsDeg * Math.PI / 180;
-
-  // λ_asc = atan2( sinθ·cosε + tanφ·sinε, cosθ )
-  const y = Math.sin(θ) * Math.cos(ε) + Math.tan(φ) * Math.sin(ε);
-  const x = Math.cos(θ);
-  let λ = Math.atan2(y, x) * 180 / Math.PI;
-  if (!isFinite(λ)) λ = 0;                       // last-resort guard
-  return (λ + 360) % 360;
-}
-
-// 12 equal-house cusps 30° from the Ascendant
-function equalHouseCusps(ascDeg) {
-  const base = Number.isFinite(+ascDeg) ? +ascDeg : 0;
-  const out = [];
-  for (let i = 0; i < 12; i++) out.push((base + 30 * i) % 360);
-  return out;
-}
-
-
+const NAK_SIZE = 360 / 27;
+const PADA_SIZE = NAK_SIZE / 4;
 
 function nakshatraOf(siderealLon) {
   const lon = norm360(siderealLon);
   const idx = Math.floor(lon / NAK_SIZE);
   const within = lon - idx * NAK_SIZE;
-  const pada = Math.floor(within / PADA_SIZE) + 1; // 1..4
+  const pada = Math.floor(within / PADA_SIZE) + 1;
   const item = NAKSHATRAS[idx];
   return { index: idx, name: item.en, dev: item.dev, pada };
 }
@@ -125,7 +80,42 @@ function meanLunarNodeLongitude(date) {
   return norm360(omega);
 }
 
-/* ========================= Ephemeris Setup ========================= */
+/* ========================= ASC & Houses ========================= */
+
+function lstRadians(date, longitudeDeg) {
+  const sth = Astronomy.SiderealTime(date); // hours
+  let lstDeg = sth * 15 + (Number(longitudeDeg) || 0);
+  lstDeg = ((lstDeg % 360) + 360) % 360;
+  return lstDeg * Math.PI / 180;
+}
+
+function computeAscendantDeg(date, latitudeDeg, longitudeDeg) {
+  const lat = Number.isFinite(+latitudeDeg) ? +latitudeDeg : 0;
+  const lon = Number.isFinite(+longitudeDeg) ? +longitudeDeg : 0;
+  const tilt = Astronomy.EarthTilt(date) || {};
+  const epsDeg =
+    (typeof tilt.obliq === "number" && isFinite(tilt.obliq)) ? tilt.obliq :
+    (typeof tilt.obl   === "number" && isFinite(tilt.obl))   ? tilt.obl   :
+    (typeof tilt.eps   === "number" && isFinite(tilt.eps))   ? tilt.eps   :
+    23.4392911;
+  const φ = lat * Math.PI / 180;
+  const θ = lstRadians(date, lon);
+  const ε = epsDeg * Math.PI / 180;
+  const y = Math.sin(θ) * Math.cos(ε) + Math.tan(φ) * Math.sin(ε);
+  const x = Math.cos(θ);
+  let λ = Math.atan2(y, x) * 180 / Math.PI;
+  if (!isFinite(λ)) λ = 0;
+  return norm360(λ);
+}
+
+function equalHouseCusps(ascDeg) {
+  const base = Number.isFinite(+ascDeg) ? +ascDeg : 0;
+  const out = [];
+  for (let i = 0; i < 12; i++) out.push(norm360(base + 30 * i));
+  return out;
+}
+
+/* ========================= Ephemeris ========================= */
 
 const BODIES = [
   { key: "Sun",     body: Astronomy.Body.Sun,     color: "#ffb703" },
@@ -140,32 +130,29 @@ const BODIES = [
   { key: "Pluto",   body: Astronomy.Body.Pluto,   color: "#bfb8da", optional: true }
 ];
 
-function usePlanetLongitudes(date, useMeanNode) {
-  return useMemo(() => {
-    const results = [];
-    for (const item of BODIES) {
-      const vec = Astronomy.GeoVector(item.body, date, true);
-      const ecl = Astronomy.Ecliptic(vec); // ecliptic-of-date
-      results.push({
-        key: item.key,
-        color: item.color,
-        body: item.body,                    // keep body for retrograde sampling
-        elon: norm360(ecl.elon),
-        optional: !!item.optional
-      });
-    }
-    // Nodes
-    const rahu = meanLunarNodeLongitude(date);
-    const ketu = norm360(rahu + 180);
-    results.push({ key: useMeanNode ? "Rahu (Mean)" : "Rahu (True – TBD)", color: "#2a9d8f", elon: rahu, isNode: true });
-    results.push({ key: useMeanNode ? "Ketu (Mean)" : "Ketu (True – TBD)", color: "#264653", elon: ketu, isNode: true });
-    return results;
-  }, [date, useMeanNode]);
+function planetLongitudes(date, useMeanNode) {
+  const results = [];
+  for (const item of BODIES) {
+    const vec = Astronomy.GeoVector(item.body, date, true);
+    const ecl = Astronomy.Ecliptic(vec);
+    results.push({
+      key: item.key,
+      color: item.color,
+      body: item.body,
+      elon: norm360(ecl.elon),
+      optional: !!item.optional
+    });
+  }
+  const rahu = meanLunarNodeLongitude(date);
+  const ketu = norm360(rahu + 180);
+  results.push({ key: useMeanNode ? "Rahu (Mean)" : "Rahu (True – TBD)", color: "#2a9d8f", elon: rahu, isNode: true });
+  results.push({ key: useMeanNode ? "Ketu (Mean)" : "Ketu (True – TBD)", color: "#264653", elon: ketu, isNode: true });
+  return results;
 }
 
-/* ========================= Collision Resolver ========================= */
+/* ========================= Collisions ========================= */
 
-function resolveCollisions(points, minSepDeg = 4) {
+function resolveCollisions(points, minSepDeg = 6) {
   const sorted = [...points].sort((a, b) => a.lon - b.lon);
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1], cur = sorted[i];
@@ -180,29 +167,31 @@ function resolveCollisions(points, minSepDeg = 4) {
   return points;
 }
 
-/* ========================= Wheel Component (plain JS props) ========================= */
+/* ========================= Wheel ========================= */
 
-function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatraGrid, showAspects, aspectOrb, enabledAspects, useMeanNode, labelsOutside = true, showDevanagari = true, lat, lon }) {
-
-  const planets = usePlanetLongitudes(date, useMeanNode);
+function Wheel({
+  date, ayanamshaDeg, useSidereal,
+  showOuterPlanets, showNakshatraGrid,
+  showAspects, aspectOrb, enabledAspects, useMeanNode,
+  labelsOutside = true, showDevanagari = true,
+  lat, lon
+}) {
+  const planets = planetLongitudes(date, useMeanNode);
   const filtered = planets.filter(p => showOuterPlanets || !p.optional);
   const points = filtered.map(p => ({ ...p, lon: useSidereal ? norm360(p.elon - ayanamshaDeg) : p.elon }));
-  // ---- Ascendant + Equal-House cusps ----
-  const ascTropical = computeAscendantDeg(date, lat, lon);
 
-  // We’ll pass lat/lon via window.*; see section E to keep Wheel decoupled from parent.
+  // ASC & equal houses
+  const ascTropical = computeAscendantDeg(date, lat, lon);
   const ascToUse = useSidereal ? norm360(ascTropical - ayanamshaDeg) : ascTropical;
   const houseCusps = equalHouseCusps(ascToUse);
-
 
   // SVG geometry
   const size = 740;
   const cx = size / 2, cy = size / 2;
-  const outer = 320;   // outer radius
-  const inner = 250;   // planet ring
+  const outer = 320;
+  const inner = 250;
 
   function angleToXY(angleDeg, r) {
-    // 0° Aries at right (3 o'clock)
     const a = (0 - angleDeg) * DEG2RAD;
     return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
   }
@@ -215,7 +204,7 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
       .some(target => Math.abs(ang - target) <= aspectOrb);
   }
 
-  // Prep CSV rows (kept in a ref-like variable each render; picked by buttons below via closure)
+  // Prep CSV rows
   const csvRows = [["Body", "Rasi", "Nakshatra", "Longitude"]];
 
   return (
@@ -250,21 +239,14 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
           return (
             <g key={`grid-${i}`}>
               <line x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="#94a3b8" strokeWidth={1} />
-              <text
-                x={m.x}
-                y={m.y}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                className="fill-slate-700"
-                style={{ fontSize: 16, fontWeight: 700 }}
-              >
+              <text x={m.x} y={m.y} textAnchor="middle" dominantBaseline="middle" className="fill-slate-700" style={{ fontSize: 16, fontWeight: 700 }}>
                 {textToShow}
               </text>
             </g>
           );
         })}
 
-        {/* Nakshatra grid (27) + padas (optional) */}
+        {/* Nakshatra grid */}
         {showNakshatraGrid && (
           <g>
             {Array.from({ length: 27 }).map((_, i) => {
@@ -282,7 +264,7 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
           </g>
         )}
 
-        {/* 5° minor ticks */}
+        {/* 5° ticks */}
         {Array.from({ length: 72 }).map((_, i) => {
           const angle = i * 5;
           const p1 = angleToXY(angle, outer);
@@ -290,43 +272,31 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
           return <line key={`tick-${i}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#cbd5e1" strokeWidth={i % 6 === 0 ? 1.5 : 1} />;
         })}
 
-        {/* Inner ring for planets */}
+        {/* Inner ring */}
         <circle cx={cx} cy={cy} r={inner} fill="none" stroke="#e2e8f0" strokeWidth={1} />
 
-        {/* Equal-House cusps */}
-          {houseCusps.map((lonDeg, i) => {
-            if (!Number.isFinite(lonDeg)) return null;     // <- guard
-            const p = angleToXY(lonDeg, outer);
-            if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
-            return (
-              <g key={`house-${i}`}>
-                <line x1={cx} y1={cy} x2={p.x} y2={p.y}
-                      stroke={i===0 ? "#0ea5e9" : "#cbd5e1"}
-                      strokeWidth={i===0 ? 2 : 1} opacity={0.9}/>
-                {(() => {
-                  const mid = (lonDeg + 15) % 360;
-                  const m = angleToXY(mid, outer - 10);
-                  if (!isFinite(m.x) || !isFinite(m.y)) return null;
-                  return <text x={m.x} y={m.y} textAnchor="middle" dominantBaseline="middle"
-                              className="fill-slate-500" style={{fontSize:12,fontWeight:700}}>
-                          {i+1}
-                        </text>;
-                })()}
-              </g>
-            );
-          })}
-
-          {/* ASC glyph */}
-          {Number.isFinite(houseCusps[0]) && (() => {
-            const pos = angleToXY(houseCusps[0], outer + 18);
-            if (!isFinite(pos.x) || !isFinite(pos.y)) return null;
-            return <text x={pos.x} y={pos.y} textAnchor="middle" dominantBaseline="middle"
-                        className="fill-sky-600" style={{ fontSize: 14, fontWeight: 800, letterSpacing: 1 }}>
-                    ASC
-                  </text>;
-          })()}
-
-        
+        {/* House cusps + ASC glyph */}
+        {houseCusps.map((lonDeg, i) => {
+          const p = angleToXY(lonDeg, outer);
+          const mid = norm360(lonDeg + 15);
+          const m = angleToXY(mid, outer - 10);
+          return (
+            <g key={`house-${i}`}>
+              <line x1={cx} y1={cy} x2={p.x} y2={p.y} stroke={i === 0 ? "#0ea5e9" : "#cbd5e1"} strokeWidth={i === 0 ? 2 : 1} opacity={0.95} />
+              <text x={m.x} y={m.y} textAnchor="middle" dominantBaseline="middle" className="fill-slate-500" style={{ fontSize: 12, fontWeight: 700 }}>
+                {i + 1}
+              </text>
+            </g>
+          );
+        })}
+        {(() => {
+          const pos = angleToXY(houseCusps[0], outer + 18);
+          return (
+            <text x={pos.x} y={pos.y} textAnchor="middle" dominantBaseline="middle" className="fill-sky-600" style={{ fontSize: 14, fontWeight: 800 }}>
+              ASC
+            </text>
+          );
+        })()}
 
         {/* Aspect lines */}
         {showAspects && points.map((a, i) =>
@@ -338,61 +308,51 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
           })
         )}
 
-        {/* Planet markers with anti-collision + retrograde marker */}
-        {(() => {
-          const enhanced = resolveCollisions(points.map(p => ({ ...p })), 4);
-          return enhanced.map((p) => {
-            const pos = angleToXY(p.lon, inner);
-            const label = zodiacBreakdown(p.lon);
+        {/* Planet markers */}
+        {resolveCollisions(points.map(p => ({ ...p })), 6).map((p) => {
+          const pos = angleToXY(p.lon, inner);
+          const label = zodiacBreakdown(p.lon);
 
-            // label bumping
-            const bump = (p._bump || 0);
-            const stem = 22 + bump * 10;
-            const textY = 28 + bump * 10;
+          const bump = (p._bump || 0);
+          const stem = 22 + bump * 14;
+          const textY = 28 + bump * 14;
 
-            // safe retrograde check (skip nodes & luminaries)
-            let retro = false;
-            try {
-              if (p.body && !p.isNode && p.key !== "Sun" && p.key !== "Moon") {
-                const dtm = new Date(date.getTime() - 12 * 3600000);
-                const dtp = new Date(date.getTime() + 12 * 3600000);
-                const prev = Astronomy.Ecliptic(Astronomy.GeoVector(p.body, dtm, true)).elon;
-                const next = Astronomy.Ecliptic(Astronomy.GeoVector(p.body, dtp, true)).elon;
-                let delta = norm360(next - prev); if (delta > 180) delta -= 360;
-                retro = delta < 0;
-              }
-            } catch (e) {
-              // if anything goes wrong here, keep rendering without retro flag
-              retro = false;
+          let retro = false;
+          try {
+            if (p.body && !p.isNode && p.key !== "Sun" && p.key !== "Moon") {
+              const dtm = new Date(date.getTime() - 12 * 3600000);
+              const dtp = new Date(date.getTime() + 12 * 3600000);
+              const prev = Astronomy.Ecliptic(Astronomy.GeoVector(p.body, dtm, true)).elon;
+              const next = Astronomy.Ecliptic(Astronomy.GeoVector(p.body, dtp, true)).elon;
+              let delta = norm360(next - prev); if (delta > 180) delta -= 360;
+              retro = delta < 0;
             }
+          } catch {}
 
-            return (
-              <g key={`p-${p.key}`}>
-                <circle cx={pos.x} cy={pos.y} r={7} fill={p.color} stroke="#0f172a" strokeWidth={1} />
-                <line x1={pos.x} y1={pos.y} x2={pos.x} y2={pos.y - stem} stroke={p.color} strokeWidth={1} />
-                <text x={pos.x} y={pos.y - textY} textAnchor="middle" className="fill-slate-800" style={{ fontSize: 12, fontWeight: 700 }}>
-                  {p.key}{retro ? " ℞" : ""}
-                </text>
-                <text x={pos.x} y={pos.y - (textY - 14)} textAnchor="middle" className="fill-slate-600" style={{ fontSize: 11 }}>
-                  {`${label.deg}°${label.min.toString().padStart(2, "0")}′`}
-                </text>
-              </g>
-            );
-          });
-        })()}
+          return (
+            <g key={`p-${p.key}`}>
+              <circle cx={pos.x} cy={pos.y} r={7} fill={p.color} stroke="#0f172a" strokeWidth={1} />
+              <line x1={pos.x} y1={pos.y} x2={pos.x} y2={pos.y - stem} stroke={p.color} strokeWidth={1} />
+              <text x={pos.x} y={pos.y - textY} textAnchor="middle" className="fill-slate-800" style={{ fontSize: 12, fontWeight: 700 }}>
+                {p.key}{retro ? " ℞" : ""}
+              </text>
+              <text x={pos.x} y={pos.y - (textY - 14)} textAnchor="middle" className="fill-slate-600" style={{ fontSize: 11 }}>
+                {`${label.deg}°${String(label.min).padStart(2, "0")}′`}
+              </text>
+            </g>
+          );
+        })}
 
-        {/* Center dot */}
         <circle cx={cx} cy={cy} r={4} fill="#0f172a" />
       </svg>
 
-      {/* Listing + actions */}
+      {/* Table + actions */}
       <div className="min-w-[360px] max-w-[520px]">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-xl font-bold text-slate-800">Placements</h2>
           <div className="flex gap-2">
             <button
               onClick={() => {
-                // Export table to CSV (from closure)
                 try {
                   const rows = csvRows || [];
                   const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -401,9 +361,7 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
                   const a = document.createElement('a');
                   a.href = url; a.download = 'placements.csv'; a.click();
                   URL.revokeObjectURL(url);
-                } catch {
-                  alert("CSV export failed");
-                }
+                } catch { alert("CSV export failed"); }
               }}
               className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100">
               Export CSV
@@ -415,9 +373,7 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
                   const tsv = rows.map(r => r.join("\t")).join("\n");
                   await navigator.clipboard.writeText(tsv);
                   alert("Copied placements to clipboard.");
-                } catch {
-                  alert("Copy failed.");
-                }
+                } catch { alert("Copy failed."); }
               }}
               className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100">
               Copy CSV
@@ -433,7 +389,6 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
                   const img = new Image();
                   img.onload = function () {
                     const canvas = document.createElement('canvas');
-                    // fallback sizes if viewBox missing
                     const vb = svg.viewBox && svg.viewBox.baseVal ? svg.viewBox.baseVal : null;
                     canvas.width = vb ? vb.width : (svg.width && svg.width.baseVal ? svg.width.baseVal.value : 740);
                     canvas.height = vb ? vb.height : (svg.height && svg.height.baseVal ? svg.height.baseVal.value : 740);
@@ -447,9 +402,7 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
                     link.click();
                   };
                   img.src = image64;
-                } catch {
-                  alert("PNG export failed");
-                }
+                } catch { alert("PNG export failed"); }
               }}
               className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100">
               Export PNG
@@ -465,30 +418,49 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
           <thead>
             <tr className="text-left text-slate-500">
               <th className="pb-1">Body</th>
-              <th className="pb-1">Rasi (\u0930\u093e\u0936\u093f)</th>
+              <th className="pb-1">Rasi (राशि)</th>
               <th className="pb-1">Nakshatra</th>
               <th className="pb-1">Longitude</th>
             </tr>
           </thead>
           <tbody>
-            {points.map((p) => {
-              const z = zodiacBreakdown(p.lon);
-              const sidLon = norm360(p.elon - ayanamshaDeg); // sidereal lon for nakshatra
+            {/* ASC row */}
+            {(() => {
+              const z = zodiacBreakdown(ascToUse);
+              const sidLon = norm360(ascTropical - ayanamshaDeg);
               const nk = nakshatraOf(sidLon);
-
-              // feed CSV row (per render; fine for ad-hoc export)
               csvRows.push([
-                p.key,
-                `${showDevanagari ? z.signGlyph + " " : ""}${z.sign} ${z.deg}°${z.min.toString().padStart(2, "0")}′`,
+                "Ascendant",
+                `${z.sign} ${z.deg}°${String(z.min).padStart(2, "0")}′`,
                 `${nk.name} (p${nk.pada})`,
                 `${z.raw.toFixed(3)}°`
               ]);
+              return (
+                <tr className="bg-slate-100">
+                  <td className="px-2 py-1 font-semibold" style={{ color: "#0ea5e9" }}>Ascendant</td>
+                  <td className="px-2 py-1">{z.sign} {z.deg}°{String(z.min).padStart(2, "0")}′</td>
+                  <td className="px-2 py-1">{nk.dev} (pada {nk.pada})</td>
+                  <td className="px-2 py-1">{z.raw.toFixed(3)}°</td>
+                </tr>
+              );
+            })()}
 
+            {/* Planets */}
+            {points.map((p) => {
+              const z = zodiacBreakdown(p.lon);
+              const sidLon = norm360(p.elon - ayanamshaDeg);
+              const nk = nakshatraOf(sidLon);
+              csvRows.push([
+                p.key,
+                `${z.sign} ${z.deg}°${String(z.min).padStart(2, "0")}′`,
+                `${nk.name} (p${nk.pada})`,
+                `${z.raw.toFixed(3)}°`
+              ]);
               return (
                 <tr key={`row-${p.key}`} className="bg-slate-50">
                   <td className="px-2 py-1 font-semibold" style={{ color: p.color }}>{p.key}</td>
                   <td className="px-2 py-1">
-                    {showDevanagari ? (z.signGlyph + " ") : ""}{z.sign} {z.deg}°{z.min.toString().padStart(2, "0")}′
+                    {z.sign} {z.deg}°{String(z.min).padStart(2, "0")}′
                   </td>
                   <td className="px-2 py-1">{nk.dev} (pada {nk.pada})</td>
                   <td className="px-2 py-1">{z.raw.toFixed(3)}°</td>
@@ -499,17 +471,14 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
         </table>
 
         <div className="mt-4 text-xs text-slate-500 leading-relaxed space-y-2">
-          <p>
-            Mode: <span className="font-semibold">{useSidereal ? "Sidereal (ayanāṁśa applied)" : "Tropical (no ayanāṁśa)"}</span>
-            {" • "}Nodes: <span className="font-semibold">{useMeanNode ? "Mean" : "True (TBD)"}</span>
-          </p>
+          <p>Mode: <span className="font-semibold">{useSidereal ? "Sidereal (ayanāṁśa applied)" : "Tropical (no ayanāṁśa)"}</span> • Nodes: <span className="font-semibold">{useMeanNode ? "Mean" : "True (TBD)"}</span></p>
         </div>
       </div>
     </div>
   );
 }
 
-/* ========================= Page Component (no TS; no window hacks) ========================= */
+/* ========================= Page Component ========================= */
 
 export default function VedicZodiacWheel() {
   const [whenIso, setWhenIso] = useState(() => {
@@ -527,12 +496,12 @@ export default function VedicZodiacWheel() {
   const [showAspects, setShowAspects] = useState(true);
   const [aspectOrb, setAspectOrb] = useState(6);
   const [enabledAspects, setEnabledAspects] = useState({ 0: true, 60: false, 90: true, 120: true, 180: true });
-  // Observer location (east longitudes positive)
-  const [lat, setLat] = useState(26.4499);     // Kanpur default
-  const [lon, setLon] = useState(80.3319);     // Kanpur default
 
+  // observer location
+  const [lat, setLat] = useState(26.4499);
+  const [lon, setLon] = useState(80.3319);
 
-  // new UI toggles
+  // UI toggles
   const [labelsOutside, setLabelsOutside] = useState(true);
   const [showDevanagari, setShowDevanagari] = useState(true);
 
@@ -568,9 +537,9 @@ export default function VedicZodiacWheel() {
 
   return (
     <div className="p-4 lg:p-6 font-sans text-slate-800">
-      <h1 className="text-2xl font-extrabold mb-2">Vedic Zodiac Wheel — Earth-Centered (JS v2.3)</h1>
+      <h1 className="text-2xl font-extrabold mb-2">Vedic Zodiac Wheel — Earth-Centered (JS v2.4)</h1>
       <p className="text-slate-600 mb-4">
-        Sidereal option, outer planets, 27 nakshatra grid, aspects, retrograde marker, overlap-safe labels, PNG/CSV export, and UI toggles for label placement & Devanagari.
+        Sidereal option, outer planets, 27 nakshatra grid, aspects, retrograde, ASC + equal houses, overlap-safe labels, PNG/CSV export, and UI toggles.
       </p>
 
       {/* Date & Ayanamsha */}
@@ -598,21 +567,17 @@ export default function VedicZodiacWheel() {
           ))}
         </div>
 
+        {/* Location */}
         <div className="flex gap-3 items-end mt-2">
           <label className="text-sm">
             <span className="block text-slate-600 mb-1">Latitude (°)</span>
-            <input type="number" step="0.0001" value={lat}
-                  onChange={(e)=>setLat(parseFloat(e.target.value||"0"))}
-                  className="border rounded-lg px-3 py-2 w-32" />
+            <input type="number" step="0.0001" value={lat} onChange={(e)=>setLat(parseFloat(e.target.value||"0"))} className="border rounded-lg px-3 py-2 w-32" />
           </label>
           <label className="text-sm">
             <span className="block text-slate-600 mb-1">Longitude (°E)</span>
-            <input type="number" step="0.0001" value={lon}
-                  onChange={(e)=>setLon(parseFloat(e.target.value||"0"))}
-                  className="border rounded-lg px-3 py-2 w-32" />
+            <input type="number" step="0.0001" value={lon} onChange={(e)=>setLon(parseFloat(e.target.value||"0"))} className="border rounded-lg px-3 py-2 w-32" />
           </label>
         </div>
-
       </div>
 
       {/* Time scrubbing */}
@@ -637,15 +602,7 @@ export default function VedicZodiacWheel() {
             <option value={500}>slow</option>
           </select>
         </div>
-        <input
-          type="range"
-          min={-rangeDays * 24}
-          max={rangeDays * 24}
-          step={1}
-          value={offsetHours}
-          onChange={(e) => setOffsetHours(parseInt(e.target.value))}
-          className="w-full mt-3"
-        />
+        <input type="range" min={-rangeDays * 24} max={rangeDays * 24} step={1} value={offsetHours} onChange={(e) => setOffsetHours(parseInt(e.target.value))} className="w-full mt-3" />
         <div className="text-xs text-slate-600 mt-1">
           Base: {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(baseDate)}
           {" • "}Offset: {offsetHours}h
@@ -696,10 +653,6 @@ export default function VedicZodiacWheel() {
         lat={lat}
         lon={lon}
       />
-
-      <div className="mt-6 text-xs text-slate-500">
-        <p>Tip: Set ayanāṁśa to <span className="font-semibold">0°</span> to view tropical placements. For Vedic use, keep Sidereal on and pick your preferred ayanāṁśa value.</p>
-      </div>
     </div>
   );
 }
