@@ -586,20 +586,7 @@ export default function VedicZodiacWheel() {
           ))}
         </div>
 
-        <div className="flex gap-3 items-end mt-2">
-          <label className="text-sm">
-            <span className="block text-slate-600 mb-1">Latitude (°)</span>
-            <input type="number" step="0.0001" value={lat}
-                  onChange={(e)=>setLat(parseFloat(e.target.value||"0"))}
-                  className="border rounded-lg px-3 py-2 w-32" />
-          </label>
-          <label className="text-sm">
-            <span className="block text-slate-600 mb-1">Longitude (°E)</span>
-            <input type="number" step="0.0001" value={lon}
-                  onChange={(e)=>setLon(parseFloat(e.target.value||"0"))}
-                  className="border rounded-lg px-3 py-2 w-32" />
-          </label>
-        </div>
+        
 
       </div>
 
