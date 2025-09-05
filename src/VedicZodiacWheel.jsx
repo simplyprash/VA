@@ -54,6 +54,45 @@ const NAKSHATRAS = [
 
 const NAK_SIZE = 360/27;       // 13°20′ per nakshatra
 const PADA_SIZE = NAK_SIZE/4;  // 3°20′ per pada
+
+// Returns +/- motion in deg/day for a body at 'date' (sidereal-aware based on ayanamshaDeg/useSidereal)
+async function apparentDailySpeed(body, date) {
+  const prev = new Date(date.getTime() - 86400000);
+  const next = new Date(date.getTime() + 86400000);
+
+  const pv = Astronomy.GeoVector(body, prev, true);
+  const nv = Astronomy.GeoVector(body, next, true);
+  const pe = Astronomy.Ecliptic(pv).elon;
+  const ne = Astronomy.Ecliptic(nv).elon;
+
+  let d = norm360(ne - pe);
+  if (d > 180) d -= 360; // shortest direction
+  return d;
+}
+
+// Simple label collision resolver: if two labels are within N degrees,
+// nudge their leader lines/labels radially to avoid overlap.
+function resolveCollisions(points, minSepDeg = 4) {
+  const sorted = [...points].sort((a,b)=>a.lon-b.lon);
+  for (let i=1;i<sorted.length;i++){
+    const prev = sorted[i-1];
+    const cur = sorted[i];
+    const gap = Math.abs(norm360(cur.lon - prev.lon));
+    if (gap < minSepDeg) {
+      // push current label outward by a tier (you can stack if needed)
+      cur._bump = (prev._bump || 0) + 1;
+    }
+  }
+  // Also check wrap-around between last and first
+  if (sorted.length > 1) {
+    const first = sorted[0], last = sorted[sorted.length-1];
+    const wrapGap = Math.abs(norm360(first.lon + 360 - last.lon));
+    if (wrapGap < minSepDeg) first._bump = (last._bump || 0) + 1;
+  }
+  return points;
+}
+
+
 function nakshatraOf(siderealLon) {
   const lon = norm360(siderealLon);
   const idx = Math.floor(lon / NAK_SIZE);
@@ -211,18 +250,45 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
         ))}
 
         {/* Planet markers */}
-        {points.map((p) => {
-          const pos = angleToXY(p.lon, inner);
-          const label = zodiacBreakdown(p.lon);
-          return (
-            <g key={`p-${p.key}`}>
-              <circle cx={pos.x} cy={pos.y} r={7} fill={p.color} stroke="#0f172a" strokeWidth={1} filter="url(#softGlow)" />
-              <line x1={pos.x} y1={pos.y} x2={pos.x} y2={pos.y - 22} stroke={p.color} strokeWidth={1} />
-              <text x={pos.x} y={pos.y - 28} textAnchor="middle" className="fill-slate-800" style={{ fontSize: 12, fontWeight: 700 }}>{p.key}</text>
-              <text x={pos.x} y={pos.y - 14} textAnchor="middle" className="fill-slate-600" style={{ fontSize: 11 }}>{`${label.deg}°${label.min.toString().padStart(2, "0")}′`}</text>
-            </g>
-          );
-        })}
+       {(() => {
+  // compute per-planet speed and mark retrograde
+  const enhanced = points.map(p => ({...p}));
+  // Anti-overlap: adjust label tiers
+  resolveCollisions(enhanced, 4);
+
+  return enhanced.map((p) => {
+    const pos = angleToXY(p.lon, inner);
+    const label = zodiacBreakdown(p.lon);
+
+    // bump tiers: each bump adds 10px outward
+    const bump = (p._bump || 0);
+    const stem = 22 + bump * 10;
+    const textY = 28 + bump * 10;
+
+    // Retrograde check (async not allowed here; approximate with small delta)
+    // We'll sample +/- 12h to infer motion
+    const dtm = new Date(date.getTime() - 12*3600000);
+    const dtp = new Date(date.getTime() + 12*3600000);
+    const prev = Astronomy.Ecliptic(Astronomy.GeoVector(p.optional ? p.body : p.body, dtm, true)).elon;
+    const next = Astronomy.Ecliptic(Astronomy.GeoVector(p.optional ? p.body : p.body, dtp, true)).elon;
+    let delta = norm360(next - prev); if (delta > 180) delta -= 360;
+    const retro = delta < 0;
+
+    return (
+      <g key={`p-${p.key}`}>
+        <circle cx={pos.x} cy={pos.y} r={7} fill={p.color} stroke="#0f172a" strokeWidth={1} filter="url(#softGlow)" />
+        <line x1={pos.x} y1={pos.y} x2={pos.x} y2={pos.y - stem} stroke={p.color} strokeWidth={1} />
+        <text x={pos.x} y={pos.y - textY} textAnchor="middle" className="fill-slate-800" style={{ fontSize: 12, fontWeight: 700 }}>
+          {p.key}{retro ? " ℞" : ""}
+        </text>
+        <text x={pos.x} y={pos.y - (textY - 14)} textAnchor="middle" className="fill-slate-600" style={{ fontSize: 11 }}>
+          {`${label.deg}°${label.min.toString().padStart(2, "0")}′`}
+        </text>
+      </g>
+    );
+  });
+})()}
+
 
         {/* Center dot */}
         <circle cx={cx} cy={cy} r={4} fill="#0f172a" />
@@ -231,33 +297,62 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
       {/* Listing + controls */}
       <div className="min-w-[360px] max-w-[520px]">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xl font-bold text-slate-800">Placements</h2>
-          <button
-            onClick={() => {
-              const svg = document.querySelector('svg');
-              const xml = new XMLSerializer().serializeToString(svg);
-              const svg64 = btoa(unescape(encodeURIComponent(xml)));
-              const image64 = 'data:image/svg+xml;base64,' + svg64;
-              const img = new Image();
-              img.onload = function() {
-                const canvas = document.createElement('canvas');
-                canvas.width = svg.viewBox.baseVal.width || svg.width.baseVal.value;
-                canvas.height = svg.viewBox.baseVal.height || svg.height.baseVal.value;
-                const ctx = canvas.getContext('2d');
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0,0,canvas.width,canvas.height);
-                ctx.drawImage(img,0,0);
-                const link = document.createElement('a');
-                link.download = 'vedic-wheel.png';
-                link.href = canvas.toDataURL('image/png');
-                link.click();
-              };
-              img.src = image64;
-            }}
-            className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100">
-            Export PNG
-          </button>
-        </div>
+  <h2 className="text-xl font-bold text-slate-800">Placements</h2>
+  <div className="flex gap-2">
+    <button
+      onClick={() => {
+        // Export table to CSV
+        const rows = window.__lastPlacementsCSV || [];
+        const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+        const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'placements.csv'; a.click();
+        URL.revokeObjectURL(url);
+      }}
+      className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100">
+      Export CSV
+    </button>
+    <button
+      onClick={async () => {
+        try {
+          const rows = window.__lastPlacementsCSV || [];
+          const csv = rows.map(r => r.join("\t")).join("\n"); // tsv for clipboard readability
+          await navigator.clipboard.writeText(csv);
+          alert("Copied placements to clipboard.");
+        } catch(e) { alert("Copy failed."); }
+      }}
+      className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100">
+      Copy CSV
+    </button>
+    <button
+      onClick={() => {
+        const svg = document.querySelector('svg');
+        const xml = new XMLSerializer().serializeToString(svg);
+        const svg64 = btoa(unescape(encodeURIComponent(xml)));
+        const image64 = 'data:image/svg+xml;base64,' + svg64;
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          canvas.width = svg.viewBox.baseVal.width || svg.width.baseVal.value;
+          canvas.height = svg.viewBox.baseVal.height || svg.height.baseVal.value;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0,0,canvas.width,canvas.height);
+          ctx.drawImage(img,0,0);
+          const link = document.createElement('a');
+          link.download = 'vedic-wheel.png';
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+        };
+        img.src = image64;
+      }}
+      className="text-xs border rounded px-2 py-1 bg-slate-50 hover:bg-slate-100">
+      Export PNG
+    </button>
+  </div>
+</div>
+
         <p className="text-sm text-slate-600 mb-3">{new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "medium" }).format(date)}</p>
 
         <table className="w-full text-sm border-separate border-spacing-y-1">
@@ -433,7 +528,10 @@ export default function VedicZodiacWheel() {
         <label className="flex items-center gap-2"><input type="checkbox" checked={showOuterPlanets} onChange={(e)=>setShowOuterPlanets(e.target.checked)} /> Show Uranus/Neptune/Pluto</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={showNakshatraGrid} onChange={(e)=>setShowNakshatraGrid(e.target.checked)} /> Show Nakshatra grid</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={showAspects} onChange={(e)=>setShowAspects(e.target.checked)} /> Show aspects</label>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={useMeanNode} onChange={(e)=>setUseMeanNode(e.target.checked)} /> Mean node Rahu/Ketu (True node coming soon)</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={useMeanNode} onChange={(e)=>setUseMeanNode(e.target.checked)} /> Mean node Rahu/Ketu</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={labelsOutside} onChange={(e)=>setLabelsOutside(e.target.checked)} /> Zodiac labels outside</label>
+<label className="flex items-center gap-2"><input type="checkbox" checked={showDevanagari} onChange={(e)=>setShowDevanagari(e.target.checked)} /> Show Devanagari rāśi</label>
+
         {showAspects && (
           <>
             <span className="text-slate-500">Aspects:</span>
