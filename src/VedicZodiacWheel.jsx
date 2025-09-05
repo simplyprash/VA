@@ -56,6 +56,36 @@ const NAKSHATRAS = [
 const NAK_SIZE = 360 / 27;      // 13°20′
 const PADA_SIZE = NAK_SIZE / 4; // 3°20′
 
+// Local Sidereal Time at observer longitude (hours -> radians)
+function lstRadians(date, longitudeDeg) {
+  // Apparent sidereal time at Greenwich in HOURS
+  const sth = Astronomy.SiderealTime(date); // returns hours
+  // Local sidereal time in DEGREES (east longitudes positive)
+  const lstDeg = (sth * 15) + longitudeDeg;
+  return (lstDeg * Math.PI) / 180;
+}
+
+// Compute Ascendant (ecliptic longitude, degrees) using obliquity and LST.
+// Formula: λ_asc = atan2( sinθ·cosε + tanφ·sinε, cosθ )
+function computeAscendantDeg(date, latitudeDeg, longitudeDeg) {
+  const φ = latitudeDeg * Math.PI / 180;
+  const θ = lstRadians(date, longitudeDeg);                     // radians
+  const eps = (Astronomy.EarthTilt(date).obliq) * Math.PI/180;  // true obliquity (rad)
+  const y = Math.sin(θ) * Math.cos(eps) + Math.tan(φ) * Math.sin(eps);
+  const x = Math.cos(θ);
+  let λ = Math.atan2(y, x) * 180/Math.PI;  // degrees, could be negative
+  if (λ < 0) λ += 360;
+  return λ; // tropical ecliptic longitude of ASC
+}
+
+// Build Equal-House cusps starting from Ascendant (12 houses, 30° each)
+function equalHouseCusps(ascDeg) {
+  const cusps = [];
+  for (let i=0; i<12; i++) cusps.push(norm360(ascDeg + 30*i));
+  return cusps;
+}
+
+
 function nakshatraOf(siderealLon) {
   const lon = norm360(siderealLon);
   const idx = Math.floor(lon / NAK_SIZE);
@@ -139,22 +169,18 @@ function resolveCollisions(points, minSepDeg = 4) {
 
 /* ========================= Wheel Component (plain JS props) ========================= */
 
-function Wheel({
-  date,
-  ayanamshaDeg,
-  useSidereal,
-  showOuterPlanets,
-  showNakshatraGrid,
-  showAspects,
-  aspectOrb,
-  enabledAspects,
-  useMeanNode,
-  labelsOutside,
-  showDevanagari
-}) {
+function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatraGrid, showAspects, aspectOrb, enabledAspects, useMeanNode, lat, lon }) {
+
   const planets = usePlanetLongitudes(date, useMeanNode);
   const filtered = planets.filter(p => showOuterPlanets || !p.optional);
   const points = filtered.map(p => ({ ...p, lon: useSidereal ? norm360(p.elon - ayanamshaDeg) : p.elon }));
+  // ---- Ascendant + Equal-House cusps ----
+  const ascTropical = useMemo(() => computeAscendantDeg(date, lat, lon), [date, lat, lon]);
+
+  // We’ll pass lat/lon via window.*; see section E to keep Wheel decoupled from parent.
+  const ascToUse = useSidereal ? norm360(ascTropical - ayanamshaDeg) : ascTropical;
+  const houseCusps = useMemo(() => equalHouseCusps(ascToUse), [ascToUse]);
+
 
   // SVG geometry
   const size = 740;
@@ -253,6 +279,42 @@ function Wheel({
 
         {/* Inner ring for planets */}
         <circle cx={cx} cy={cy} r={inner} fill="none" stroke="#e2e8f0" strokeWidth={1} />
+
+        {/* Equal-House cusps (12 lines) */}
+        {houseCusps.map((lonDeg, i) => {
+          const p = angleToXY(lonDeg, outer);
+          return (
+            <g key={`house-${i}`}>
+              <line x1={cx} y1={cy} x2={p.x} y2={p.y}
+                    stroke={i===0 ? "#0ea5e9" : "#cbd5e1"}
+                    strokeWidth={i===0 ? 2 : 1}
+                    opacity={i===0 ? 0.95 : 0.9} />
+              {/* House number labels just inside outer rim */}
+              {(() => {
+                const mid = norm360(lonDeg + 15);
+                const m = angleToXY(mid, outer - 10);
+                return (
+                  <text x={m.x} y={m.y} textAnchor="middle" dominantBaseline="middle"
+                        className="fill-slate-500" style={{ fontSize: 12, fontWeight: 700 }}>
+                    {i+1}
+                  </text>
+                );
+              })()}
+            </g>
+          );
+        })}
+
+        {/* ASC glyph at the rim */}
+        {(() => {
+          const pos = angleToXY(houseCusps[0], outer + 18);
+          return (
+            <text x={pos.x} y={pos.y} textAnchor="middle" dominantBaseline="middle"
+                  className="fill-sky-600" style={{ fontSize: 14, fontWeight: 800, letterSpacing: 1 }}>
+              ASC
+            </text>
+          );
+        })()}
+        
 
         {/* Aspect lines */}
         {showAspects && points.map((a, i) =>
@@ -453,6 +515,10 @@ export default function VedicZodiacWheel() {
   const [showAspects, setShowAspects] = useState(true);
   const [aspectOrb, setAspectOrb] = useState(6);
   const [enabledAspects, setEnabledAspects] = useState({ 0: true, 60: false, 90: true, 120: true, 180: true });
+  // Observer location (east longitudes positive)
+  const [lat, setLat] = useState(26.4499);     // Kanpur default
+  const [lon, setLon] = useState(80.3319);     // Kanpur default
+
 
   // new UI toggles
   const [labelsOutside, setLabelsOutside] = useState(true);
@@ -519,6 +585,22 @@ export default function VedicZodiacWheel() {
             </button>
           ))}
         </div>
+
+        <div className="flex gap-3 items-end mt-2">
+          <label className="text-sm">
+            <span className="block text-slate-600 mb-1">Latitude (°)</span>
+            <input type="number" step="0.0001" value={lat}
+                  onChange={(e)=>setLat(parseFloat(e.target.value||"0"))}
+                  className="border rounded-lg px-3 py-2 w-32" />
+          </label>
+          <label className="text-sm">
+            <span className="block text-slate-600 mb-1">Longitude (°E)</span>
+            <input type="number" step="0.0001" value={lon}
+                  onChange={(e)=>setLon(parseFloat(e.target.value||"0"))}
+                  className="border rounded-lg px-3 py-2 w-32" />
+          </label>
+        </div>
+
       </div>
 
       {/* Time scrubbing */}
@@ -597,8 +679,8 @@ export default function VedicZodiacWheel() {
         aspectOrb={aspectOrb}
         enabledAspects={enabledAspects}
         useMeanNode={useMeanNode}
-        labelsOutside={labelsOutside}
-        showDevanagari={showDevanagari}
+        lat={lat}
+        lon={lon}
       />
 
       <div className="mt-6 text-xs text-slate-500">
