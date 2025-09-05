@@ -65,25 +65,47 @@ function lstRadians(date, longitudeDeg) {
   return (lstDeg * Math.PI) / 180;
 }
 
-// Compute Ascendant (ecliptic longitude, degrees) using obliquity and LST.
-// Formula: λ_asc = atan2( sinθ·cosε + tanφ·sinε, cosθ )
-function computeAscendantDeg(date, latitudeDeg, longitudeDeg) {
-  const φ = latitudeDeg * Math.PI / 180;
-  const θ = lstRadians(date, longitudeDeg);                     // radians
-  const eps = (Astronomy.EarthTilt(date).obliq) * Math.PI/180;  // true obliquity (rad)
-  const y = Math.sin(θ) * Math.cos(eps) + Math.tan(φ) * Math.sin(eps);
-  const x = Math.cos(θ);
-  let λ = Math.atan2(y, x) * 180/Math.PI;  // degrees, could be negative
-  if (λ < 0) λ += 360;
-  return λ; // tropical ecliptic longitude of ASC
+// Local Sidereal Time in radians (east longitudes positive)
+function lstRadians(date, longitudeDeg) {
+  const sth = Astronomy.SiderealTime(date);      // hours
+  let lstDeg = sth * 15 + (Number(longitudeDeg) || 0);
+  lstDeg = ((lstDeg % 360) + 360) % 360;         // normalize
+  return lstDeg * Math.PI / 180;
 }
 
-// Build Equal-House cusps starting from Ascendant (12 houses, 30° each)
-function equalHouseCusps(ascDeg) {
-  const cusps = [];
-  for (let i=0; i<12; i++) cusps.push(norm360(ascDeg + 30*i));
-  return cusps;
+// Robust Ascendant: tolerates bad lat/lon and library field differences
+function computeAscendantDeg(date, latitudeDeg, longitudeDeg) {
+  const lat = Number.isFinite(+latitudeDeg) ? +latitudeDeg : 0;
+  const lon = Number.isFinite(+longitudeDeg) ? +longitudeDeg : 0;
+
+  // obliquity fallback chain (different astronomy-engine versions expose different keys)
+  const tilt = Astronomy.EarthTilt(date) || {};
+  const epsDeg =
+    (typeof tilt.obliq === "number" && isFinite(tilt.obliq)) ? tilt.obliq :
+    (typeof tilt.obl   === "number" && isFinite(tilt.obl))   ? tilt.obl   :
+    (typeof tilt.eps   === "number" && isFinite(tilt.eps))   ? tilt.eps   :
+    23.4392911; // safe default
+
+  const φ   = lat * Math.PI / 180;
+  const θ   = lstRadians(date, lon);
+  const ε   = epsDeg * Math.PI / 180;
+
+  // λ_asc = atan2( sinθ·cosε + tanφ·sinε, cosθ )
+  const y = Math.sin(θ) * Math.cos(ε) + Math.tan(φ) * Math.sin(ε);
+  const x = Math.cos(θ);
+  let λ = Math.atan2(y, x) * 180 / Math.PI;
+  if (!isFinite(λ)) λ = 0;                       // last-resort guard
+  return (λ + 360) % 360;
 }
+
+// 12 equal-house cusps 30° from the Ascendant
+function equalHouseCusps(ascDeg) {
+  const base = Number.isFinite(+ascDeg) ? +ascDeg : 0;
+  const out = [];
+  for (let i = 0; i < 12; i++) out.push((base + 30 * i) % 360);
+  return out;
+}
+
 
 
 function nakshatraOf(siderealLon) {
@@ -280,40 +302,39 @@ function Wheel({ date, ayanamshaDeg, useSidereal, showOuterPlanets, showNakshatr
         {/* Inner ring for planets */}
         <circle cx={cx} cy={cy} r={inner} fill="none" stroke="#e2e8f0" strokeWidth={1} />
 
-        {/* Equal-House cusps (12 lines) */}
-        {houseCusps.map((lonDeg, i) => {
-          const p = angleToXY(lonDeg, outer);
-          return (
-            <g key={`house-${i}`}>
-              <line x1={cx} y1={cy} x2={p.x} y2={p.y}
-                    stroke={i===0 ? "#0ea5e9" : "#cbd5e1"}
-                    strokeWidth={i===0 ? 2 : 1}
-                    opacity={i===0 ? 0.95 : 0.9} />
-              {/* House number labels just inside outer rim */}
-              {(() => {
-                const mid = norm360(lonDeg + 15);
-                const m = angleToXY(mid, outer - 10);
-                return (
-                  <text x={m.x} y={m.y} textAnchor="middle" dominantBaseline="middle"
-                        className="fill-slate-500" style={{ fontSize: 12, fontWeight: 700 }}>
-                    {i+1}
-                  </text>
-                );
-              })()}
-            </g>
-          );
-        })}
+        {/* Equal-House cusps */}
+          {houseCusps.map((lonDeg, i) => {
+            if (!Number.isFinite(lonDeg)) return null;     // <- guard
+            const p = angleToXY(lonDeg, outer);
+            if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+            return (
+              <g key={`house-${i}`}>
+                <line x1={cx} y1={cy} x2={p.x} y2={p.y}
+                      stroke={i===0 ? "#0ea5e9" : "#cbd5e1"}
+                      strokeWidth={i===0 ? 2 : 1} opacity={0.9}/>
+                {(() => {
+                  const mid = (lonDeg + 15) % 360;
+                  const m = angleToXY(mid, outer - 10);
+                  if (!isFinite(m.x) || !isFinite(m.y)) return null;
+                  return <text x={m.x} y={m.y} textAnchor="middle" dominantBaseline="middle"
+                              className="fill-slate-500" style={{fontSize:12,fontWeight:700}}>
+                          {i+1}
+                        </text>;
+                })()}
+              </g>
+            );
+          })}
 
-        {/* ASC glyph at the rim */}
-        {(() => {
-          const pos = angleToXY(houseCusps[0], outer + 18);
-          return (
-            <text x={pos.x} y={pos.y} textAnchor="middle" dominantBaseline="middle"
-                  className="fill-sky-600" style={{ fontSize: 14, fontWeight: 800, letterSpacing: 1 }}>
-              ASC
-            </text>
-          );
-        })()}
+          {/* ASC glyph */}
+          {Number.isFinite(houseCusps[0]) && (() => {
+            const pos = angleToXY(houseCusps[0], outer + 18);
+            if (!isFinite(pos.x) || !isFinite(pos.y)) return null;
+            return <text x={pos.x} y={pos.y} textAnchor="middle" dominantBaseline="middle"
+                        className="fill-sky-600" style={{ fontSize: 14, fontWeight: 800, letterSpacing: 1 }}>
+                    ASC
+                  </text>;
+          })()}
+
         
 
         {/* Aspect lines */}
@@ -586,7 +607,20 @@ export default function VedicZodiacWheel() {
           ))}
         </div>
 
-        
+        <div className="flex gap-3 items-end mt-2">
+          <label className="text-sm">
+            <span className="block text-slate-600 mb-1">Latitude (°)</span>
+            <input type="number" step="0.0001" value={lat}
+                  onChange={(e)=>setLat(parseFloat(e.target.value||"0"))}
+                  className="border rounded-lg px-3 py-2 w-32" />
+          </label>
+          <label className="text-sm">
+            <span className="block text-slate-600 mb-1">Longitude (°E)</span>
+            <input type="number" step="0.0001" value={lon}
+                  onChange={(e)=>setLon(parseFloat(e.target.value||"0"))}
+                  className="border rounded-lg px-3 py-2 w-32" />
+          </label>
+        </div>
 
       </div>
 
