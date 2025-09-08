@@ -378,7 +378,7 @@ function Wheel({$1labelsOutside = true, showDevanagari = true, showDrishti = tru
           });
         })}
 
-        {/* Planet markers */}}
+        {/* Planet markers */}
         {resolveCollisions(points.map(p=>({ ...p })), 6).map((p) => {
           const pos = angleToXY(p.lon, inner, cx, cy); const label = zodiacBreakdown(p.lon);
           const bump = (p._bump || 0); const stem = 22 + bump*14; const textY = 28 + bump*14;
