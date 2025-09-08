@@ -200,6 +200,14 @@ const BODIES = [
   { key: 'Pluto',   body: Astronomy.Body.Pluto,   color: '#bfb8da', optional: true }
 ];
 
+// Two-letter abbreviations for compact planet labels
+const ABBR = {
+  'Sun': 'Su', 'Moon': 'Mo', 'Mercury': 'Me', 'Venus': 'Ve', 'Mars': 'Ma', 'Jupiter': 'Ju', 'Saturn': 'Sa',
+  'Uranus': 'Ur', 'Neptune': 'Ne', 'Pluto': 'Pl',
+  'Rahu (Mean)': 'Ra', 'Ketu (Mean)': 'Ke',
+  'Rahu (True – TBD)': 'Ra', 'Ketu (True – TBD)': 'Ke'
+};
+
 function planetLongitudes(date, useMeanNode){
   const results = [];
   for (const item of BODIES) {
@@ -317,18 +325,18 @@ function Wheel({
         <circle cx={cx} cy={cy} r={inner} fill="none" stroke="#e2e8f0" strokeWidth={1} />
 
         {/* House cusps + ASC glyph */}
-        {houseCusps.map((lonDeg, i) => {
-          const p = angleToXY(lonDeg, outer, cx, cy); const mid = norm360(lonDeg + 15); const m = angleToXY(mid, outer-10, cx, cy);
-          return (
-            <g key={`house-${i}`}>
-              <line x1={cx} y1={cy} x2={p.x} y2={p.y} stroke={i===0? '#0ea5e9' : '#cbd5e1'} strokeWidth={i===0?2:1} opacity={0.95} />
-              <text x={m.x} y={m.y} textAnchor="middle" dominantBaseline="middle" className="fill-slate-500" style={{ fontSize: 12, fontWeight: 700 }}>{i+1}</text>
-            </g>
-          );
-        })}
-        {(() => { const pos = angleToXY(houseCusps[0], outer+18, cx, cy); return (
-          <text x={pos.x} y={pos.y} textAnchor="middle" dominantBaseline="middle" className="fill-sky-600" style={{ fontSize: 14, fontWeight: 800 }}>ASC</text>
-        ); })()}
+        
+        {(() => {
+  const ascAngle = houseCusps[0];
+  const p = angleToXY(ascAngle, outer, cx, cy);
+  const pos = angleToXY(ascAngle, outer + 18, cx, cy);
+  return (
+    <>
+      <line x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="#0ea5e9" strokeWidth={2} opacity={0.95} />
+      <text x={pos.x} y={pos.y} textAnchor="middle" dominantBaseline="middle" className="fill-sky-600" style={{ fontSize: 14, fontWeight: 800 }}>ASC</text>
+    </>
+  );
+})()}
 
         {/* Aspect lines */}
         {showAspects && points.map((a,i) => points.slice(i+1).map((b,j) => {
@@ -355,7 +363,7 @@ function Wheel({
             <g key={`p-${p.key}`}>
               <circle cx={pos.x} cy={pos.y} r={7} fill={p.color} stroke="#0f172a" strokeWidth={1} />
               <line x1={pos.x} y1={pos.y} x2={pos.x} y2={pos.y - stem} stroke={p.color} strokeWidth={1} />
-              <text x={pos.x} y={pos.y - textY} textAnchor="middle" className="fill-slate-800" style={{ fontSize: 12, fontWeight: 700 }}>{p.key}{retro ? ' ℞' : ''}</text>
+              <text x={pos.x} y={pos.y - textY} textAnchor="middle" className="fill-slate-800" style={{ fontSize: 12, fontWeight: 700 }}>{(ABBR[p.key] || p.key.slice(0,2))}{retro ? " ℞" : ""}</text>
               <text x={pos.x} y={pos.y - (textY - 14)} textAnchor="middle" className="fill-slate-600" style={{ fontSize: 11 }}>{`${label.deg}°${String(label.min).padStart(2,'0')}′`}</text>
             </g>
           );
