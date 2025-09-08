@@ -152,22 +152,22 @@ function angleToXY(angleDeg:number, r:number, cx:number, cy:number){ const a=(0-
 
 /* ---------------- Wheel ---------------- */
 function Wheel({
-  date, ayanamshaDeg, useSidereal,
+  chartDate, ayanamshaDeg, useSidereal,
   showOuterPlanets, showNakshatraGrid,
   showAspects, aspectOrb, enabledAspects, useMeanNode,
   labelsOutside = true, showDevanagari = true, showDrishti = true,
   lat, lon
 }:{
-  date: Date; ayanamshaDeg:number; useSidereal:boolean;
+  chartDate: Date; ayanamshaDeg:number; useSidereal:boolean;
   showOuterPlanets:boolean; showNakshatraGrid:boolean;
   showAspects:boolean; aspectOrb:number; enabledAspects:Record<number,boolean>; useMeanNode:boolean;
   labelsOutside?:boolean; showDevanagari?:boolean; showDrishti?:boolean;
   lat:number; lon:number;
 }){
-  const planets = planetLongitudes(date, useMeanNode);
+  const planets = planetLongitudes(chartDate, useMeanNode);
   const filtered = planets.filter((p:any) => showOuterPlanets || !p.optional);
   const points = filtered.map((p:any) => ({ ...p, lon: useSidereal ? norm360(p.elon - ayanamshaDeg) : p.elon }));
-  const ascTropical = computeAscendantDeg(date, lat, lon);
+  const ascTropical = computeAscendantDeg(chartDate, lat, lon);
   const ascToUse = useSidereal ? norm360(ascTropical - ayanamshaDeg) : ascTropical;
 
   const size=740, cx=size/2, cy=size/2, outer=320, inner=250;
@@ -249,7 +249,7 @@ function Wheel({
         {resolveCollisions(points.map((p:any)=>({ ...p })), 6).map((p:any) => {
           const pos = angleToXY(p.lon, inner, cx, cy); const label = zodiacBreakdown(p.lon);
           const bump = (p._bump || 0); const stem = 22 + bump*14; const textY = 28 + bump*14; let retro=false;
-          try{ if(p.body && !p.isNode && p.key!=='Sun' && p.key!=='Moon'){ const dtm=new Date(date.getTime()-12*3600000); const dtp=new Date(date.getTime()+12*3600000); const prev=Astronomy.Ecliptic(Astronomy.GeoVector(p.body, dtm, true)).elon; const next=Astronomy.Ecliptic(Astronomy.GeoVector(p.body, dtp, true)).elon; let delta=norm360(next-prev); if(delta>180) delta-=360; retro = delta<0; } }catch{}
+          try{ if(p.body && !p.isNode && p.key!=='Sun' && p.key!=='Moon'){ const dtm=new Date(chartDate.getTime() - 12*3600000); const dtp=new Date(chartDate.getTime() + 12*3600000); const prev=Astronomy.Ecliptic(Astronomy.GeoVector(p.body, dtm, true)).elon; const next=Astronomy.Ecliptic(Astronomy.GeoVector(p.body, dtp, true)).elon; let delta=norm360(next-prev); if(delta>180) delta-=360; retro = delta<0; } }catch{}
           return (
             <g key={`p-${p.key}`}>
               <circle cx={pos.x} cy={pos.y} r={7} fill={p.color} stroke="#0f172a" strokeWidth={1} />
@@ -266,7 +266,7 @@ function Wheel({
       {/* Sidebar */}
       <div className="min-w-[360px] max-w-[520px]">
         <h2 className="text-xl font-bold text-slate-800 mb-2">Placements</h2>
-        <p className="text-sm text-slate-600 mb-3">{new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'medium' }).format(date)}</p>
+        <p className="text-sm text-slate-600 mb-3">{new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'medium' }).format(chartDate)}</p>
 
         <table className="w-full text-sm border-separate border-spacing-y-1">
           <thead>
@@ -324,7 +324,7 @@ export default function VedicZodiacWheel(){
   const [stepHours, setStepHours] = useState(6);
   const [rangeDays, setRangeDays] = useState(90);
   const [tickMs, setTickMs] = useState(200);
-  const date = new Date(baseDate.getTime() + offsetHours*3600000);
+  const chartDate = new Date(baseDate.getTime() + offsetHours*3600000);
 
   useEffect(() => { if(!isPlaying) return; const id = setInterval(() => { setOffsetHours(h => { const limit = rangeDays*24; const next = h + stepHours; if(next>limit) return -limit; if(next<-limit) return limit; return next; }); }, tickMs); return () => clearInterval(id); }, [isPlaying, stepHours, tickMs, rangeDays]);
 
@@ -371,7 +371,7 @@ export default function VedicZodiacWheel(){
             <select value={tickMs} onChange={(e)=>setTickMs(parseInt(e.target.value))} className="border rounded px-2 py-1 text-sm"><option value={50}>fast</option><option value={200}>normal</option><option value={500}>slow</option></select>
           </div>
           <input type="range" min={-rangeDays*24} max={rangeDays*24} step={1} value={offsetHours} onChange={(e)=>setOffsetHours(parseInt(e.target.value))} className="w-full mt-3"/>
-          <div className="text-xs text-slate-600 mt-1">Base: {new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(baseDate)} • Offset: {offsetHours}h • Showing: {new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(date)}</div>
+          <div className="text-xs text-slate-600 mt-1">Base: {new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(baseDate)} • Offset: {offsetHours}h • Showing: {new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(chartDate)}</div>
         </div>
 
         <div className="flex flex-wrap gap-4 mb-4 text-sm">
@@ -385,7 +385,7 @@ export default function VedicZodiacWheel(){
         </div>
 
         <Wheel
-          date={date}
+          chartDate={chartDate}
           ayanamshaDeg={ayanamsha}
           useSidereal={useSidereal}
           showOuterPlanets={showOuterPlanets}
