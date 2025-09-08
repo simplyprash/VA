@@ -208,6 +208,15 @@ const ABBR = {
   'Rahu (True – TBD)': 'Ra', 'Ketu (True – TBD)': 'Ke'
 };
 
+// Parāśari drishti (sign-based) — house numbers counted from the aspector's sign
+const DRISHTI = {
+  'Sun': [7], 'Moon': [7], 'Mercury': [7], 'Venus': [7],
+  'Mars': [4,7,8], 'Jupiter': [5,7,9], 'Saturn': [3,7,10],
+  'Uranus': [7], 'Neptune': [7], 'Pluto': [7],
+  'Rahu (Mean)': [5,7,9], 'Ketu (Mean)': [5,7,9],
+  'Rahu (True – TBD)': [5,7,9], 'Ketu (True – TBD)': [5,7,9]
+};
+
 function planetLongitudes(date, useMeanNode){
   const results = [];
   for (const item of BODIES) {
@@ -242,11 +251,7 @@ function resolveCollisions(points, minSepDeg = 6){
 function angleToXY(angleDeg, r, cx, cy){ const a=(0-angleDeg)*DEG2RAD; return { x: cx + r*Math.cos(a), y: cy + r*Math.sin(a) }; }
 
 /* ------------------------------ Wheel Component ------------------------------ */
-function Wheel({
-  date, ayanamshaDeg, useSidereal,
-  showOuterPlanets, showNakshatraGrid,
-  showAspects, aspectOrb, enabledAspects, useMeanNode,
-  labelsOutside = true, showDevanagari = true,
+function Wheel({$1labelsOutside = true, showDevanagari = true, showDrishti = true,
   lat, lon
 }){
   const planets = planetLongitudes(date, useMeanNode);
@@ -282,6 +287,10 @@ function Wheel({
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
+          {/* Arrowhead for drishti */}
+          <marker id="arrowHead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" markerUnits="strokeWidth">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#334155" />
+          </marker>
         </defs>
         <rect x="0" y="0" width={size} height={size} fill="url(#wheelBg)" />
 
@@ -347,7 +356,29 @@ function Wheel({
           return <line key={`asp-${i}-${j}`} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} stroke="#64748b" strokeWidth={1} opacity={0.6} />;
         }))}
 
-        {/* Planet markers */}
+        {/* Vedic drishti arrows */}
+        {showDrishti && points.map((a,i) => {
+          const aSign = Math.floor(a.lon/30);
+          const rules = DRISHTI[a.key] || [7];
+          return points.map((b,j) => {
+            if(i===j) return null;
+            const bSign = Math.floor(b.lon/30);
+            const dist = ((bSign - aSign + 12) % 12) + 1; // 1..12
+            if(!rules.includes(dist)) return null;
+            const pa = angleToXY(a.lon, inner, cx, cy);
+            const pb = angleToXY(b.lon, inner, cx, cy);
+            const dx = pb.x - pa.x, dy = pb.y - pa.y; const L = Math.hypot(dx,dy) || 1;
+            const sx = pa.x + dx * (8/L), sy = pa.y + dy * (8/L);
+            const ex = pb.x - dx * (12/L), ey = pb.y - dy * (12/L);
+            return (
+              <line key={`dr-${i}-${j}`} x1={sx} y1={sy} x2={ex} y2={ey}
+                    stroke={a.color} strokeWidth={1.4} opacity={0.8}
+                    markerEnd="url(#arrowHead)" />
+            );
+          });
+        })}
+
+        {/* Planet markers */}}
         {resolveCollisions(points.map(p=>({ ...p })), 6).map((p) => {
           const pos = angleToXY(p.lon, inner, cx, cy); const label = zodiacBreakdown(p.lon);
           const bump = (p._bump || 0); const stem = 22 + bump*14; const textY = 28 + bump*14;
@@ -468,11 +499,12 @@ export default function VedicZodiacWheel(){
   const [showOuterPlanets, setShowOuterPlanets] = useState(true);
   const [showNakshatraGrid, setShowNakshatraGrid] = useState(true);
   const [useMeanNode, setUseMeanNode] = useState(true);
-  const [showAspects, setShowAspects] = useState(true);
+  const [showAspects, setShowAspects] = useState(false);
   const [aspectOrb, setAspectOrb] = useState(6);
   const [enabledAspects, setEnabledAspects] = useState({ 0: true, 60: false, 90: true, 120: true, 180: true });
   const [labelsOutside, setLabelsOutside] = useState(true);
   const [showDevanagari, setShowDevanagari] = useState(true);
+  const [showDrishti, setShowDrishti] = useState(true);
   const [lat, setLat] = useState(26.4499);
   const [lon, setLon] = useState(80.3319);
 
@@ -554,7 +586,8 @@ export default function VedicZodiacWheel(){
         <div className="flex flex-wrap gap-4 mb-4 text-sm">
           <label className="flex items-center gap-2"><input type="checkbox" checked={showOuterPlanets} onChange={e=>setShowOuterPlanets(e.target.checked)}/> Show Uranus/Neptune/Pluto</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={showNakshatraGrid} onChange={e=>setShowNakshatraGrid(e.target.checked)}/> Show Nakshatra grid</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={showAspects} onChange={e=>setShowAspects(e.target.checked)}/> Show aspects</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={showDrishti} onChange={e=>setShowDrishti(e.target.checked)} /> Show drishti (Vedic)</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={showAspects} onChange={e=>setShowAspects(e.target.checked)} /> Show geometric aspects</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={useMeanNode} onChange={e=>setUseMeanNode(e.target.checked)}/> Mean node Rahu/Ketu (True node coming soon)</label>
           {showAspects && (<>
             <span className="text-slate-500">Aspects:</span>
@@ -585,6 +618,7 @@ export default function VedicZodiacWheel(){
           useMeanNode={useMeanNode}
           labelsOutside={labelsOutside}
           showDevanagari={showDevanagari}
+          showDrishti={showDrishti}
           lat={lat}
           lon={lon}
         />
