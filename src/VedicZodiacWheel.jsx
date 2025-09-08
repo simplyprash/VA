@@ -356,27 +356,7 @@ function Wheel({$1labelsOutside = true, showDevanagari = true, showDrishti = tru
           return <line key={`asp-${i}-${j}`} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} stroke="#64748b" strokeWidth={1} opacity={0.6} />;
         }))}
 
-        {/* Vedic drishti arrows */}
-        {showDrishti && points.map((a,i) => {
-          const aSign = Math.floor(a.lon/30);
-          const rules = DRISHTI[a.key] || [7];
-          return points.map((b,j) => {
-            if(i===j) return null;
-            const bSign = Math.floor(b.lon/30);
-            const dist = ((bSign - aSign + 12) % 12) + 1; // 1..12
-            if(!rules.includes(dist)) return null;
-            const pa = angleToXY(a.lon, inner, cx, cy);
-            const pb = angleToXY(b.lon, inner, cx, cy);
-            const dx = pb.x - pa.x, dy = pb.y - pa.y; const L = Math.hypot(dx,dy) || 1;
-            const sx = pa.x + dx * (8/L), sy = pa.y + dy * (8/L);
-            const ex = pb.x - dx * (12/L), ey = pb.y - dy * (12/L);
-            return (
-              <line key={`dr-${i}-${j}`} x1={sx} y1={sy} x2={ex} y2={ey}
-                    stroke={a.color} strokeWidth={1.4} opacity={0.8}
-                    markerEnd="url(#arrowHead)" />
-            );
-          });
-        })}
+       
 
         {/* Planet markers */}
         {resolveCollisions(points.map(p=>({ ...p })), 6).map((p) => {
