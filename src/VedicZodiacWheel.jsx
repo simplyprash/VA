@@ -12,7 +12,7 @@ import * as Astronomy from 'astronomy-engine';
    ============================================================= */
 
 /* ---------------- Error Boundary ---------------- */
-class ErrorBoundary extends React.Component<{children: React.ReactNode}, {error: any}> {
+class ErrorBoundary extends React.Component {
   constructor(props:any){ super(props); this.state = { error: null }; }
   static getDerivedStateFromError(error:any){ return { error }; }
   componentDidCatch(e:any, info:any){ console.error('ErrorBoundary caught:', e, info); }
@@ -63,9 +63,9 @@ function computeAscendantDeg(date:Date, latitudeDeg:number, longitudeDeg:number)
 const BODIES = [
   { key:'Sun',body:Astronomy.Body.Sun,color:'#ffb703' },{ key:'Moon',body:Astronomy.Body.Moon,color:'#8ecae6' },{ key:'Mercury',body:Astronomy.Body.Mercury,color:'#adb5bd' },{ key:'Venus',body:Astronomy.Body.Venus,color:'#ffafcc' },{ key:'Mars',body:Astronomy.Body.Mars,color:'#e63946' },{ key:'Jupiter',body:Astronomy.Body.Jupiter,color:'#ffd166' },{ key:'Saturn',body:Astronomy.Body.Saturn,color:'#cdb4db' },{ key:'Uranus',body:Astronomy.Body.Uranus,color:'#94d2bd',optional:true },{ key:'Neptune',body:Astronomy.Body.Neptune,color:'#90caf9',optional:true },{ key:'Pluto',body:Astronomy.Body.Pluto,color:'#bfb8da',optional:true }
 ];
-const ABBR:Record<string,string>={ Sun:'Su',Moon:'Mo',Mercury:'Me',Venus:'Ve',Mars:'Ma',Jupiter:'Ju',Saturn:'Sa',Uranus:'Ur',Neptune:'Ne',Pluto:'Pl','Rahu (Mean)':'Ra','Ketu (Mean)':'Ke','Rahu (True – TBD)':'Ra','Ketu (True – TBD)':'Ke' };
+const ABBR = { Sun:'Su',Moon:'Mo',Mercury:'Me',Venus:'Ve',Mars:'Ma',Jupiter:'Ju',Saturn:'Sa',Uranus:'Ur',Neptune:'Ne',Pluto:'Pl','Rahu (Mean)':'Ra','Ketu (Mean)':'Ke','Rahu (True – TBD)':'Ra','Ketu (True – TBD)':'Ke' };
 // Parāśari drishti rules (sign-based distances counted from aspector's sign)
-const DRISHTI:Record<string,number[]>={ Sun:[7],Moon:[7],Mercury:[7],Venus:[7],Mars:[4,7,8],Jupiter:[5,7,9],Saturn:[3,7,10],Uranus:[7],Neptune:[7],Pluto:[7],'Rahu (Mean)':[5,7,9],'Ketu (Mean)':[5,7,9],'Rahu (True – TBD)':[5,7,9],'Ketu (True – TBD)':[5,7,9] };
+const DRISHTI = { Sun:[7],Moon:[7],Mercury:[7],Venus:[7],Mars:[4,7,8],Jupiter:[5,7,9],Saturn:[3,7,10],Uranus:[7],Neptune:[7],Pluto:[7],'Rahu (Mean)':[5,7,9],'Ketu (Mean)':[5,7,9],'Rahu (True – TBD)':[5,7,9],'Ketu (True – TBD)':[5,7,9] };
 
 function planetLongitudes(date:Date, useMeanNode:boolean){
   const results:any[]=[]; for(const item of BODIES){ const vec=Astronomy.GeoVector(item.body,date,true); const ecl=Astronomy.Ecliptic(vec); results.push({ key:item.key,color:item.color,body:item.body,elon:norm360(ecl.elon),optional:!!item.optional }); }
@@ -84,12 +84,6 @@ function Wheel({
   labelsOutside=true, showDevanagari=true,
   showDrishti=true,
   lat, lon
-}:{
-  date: Date; ayanamshaDeg:number; useSidereal:boolean;
-  showOuterPlanets:boolean; showNakshatraGrid:boolean;
-  showAspects:boolean; aspectOrb:number; enabledAspects:Record<number,boolean>; useMeanNode:boolean;
-  labelsOutside?:boolean; showDevanagari?:boolean; showDrishti?:boolean;
-  lat:number; lon:number;
 }){
   const planets=planetLongitudes(date, useMeanNode);
   const filtered=planets.filter((p:any)=>showOuterPlanets||!p.optional);
